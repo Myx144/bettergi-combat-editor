@@ -1,0 +1,723 @@
+{
+  "Info": {
+    "Name": "雷国 · 技能轮转",
+    "Author": "",
+    "PreActions": [],
+    "Config": {
+      "CombatTimeline": {
+        "version": 1,
+        "compilerVersion": 3,
+        "project": {
+          "format": "betterbgi-combat-timeline",
+          "version": 1,
+          "name": "雷国 · 技能轮转",
+          "author": "",
+          "durationMs": 24000,
+          "repeat": true,
+          "scheduling": "sequence",
+          "execution": "process",
+          "team": [
+            "10000052",
+            "10000025",
+            "10000032",
+            "10000023"
+          ],
+          "clips": [
+            {
+              "id": "clip1",
+              "name": "片段1",
+              "order": 1,
+              "characterId": "10000052",
+              "abilityId": "skill",
+              "startMs": 0,
+              "foregroundMs": 900,
+              "effectMs": 25000,
+              "cooldownMs": 10000,
+              "effectPolicy": "persist",
+              "castTiming": null,
+              "castEstimateMs": 900,
+              "lockOverrideMs": null,
+              "castInputMs": null,
+              "followSourceId": null,
+              "effectSource": "catalog",
+              "hold": false,
+              "followAttack": false,
+              "attackAfterMs": 0,
+              "ensureCast": true,
+              "condition": "",
+              "readiness": "skill",
+              "notReady": "wait",
+              "protectCast": true,
+              "operation": {
+                "direction": "w",
+                "keys": "W",
+                "button": "left",
+                "x": 300,
+                "y": 0
+              },
+              "operations": [],
+              "sourceAction": null,
+              "commandOverride": null
+            },
+            {
+              "id": "clip2",
+              "name": "片段2",
+              "order": 2,
+              "characterId": "10000025",
+              "abilityId": "burst",
+              "startMs": 1000,
+              "foregroundMs": 1300,
+              "effectMs": 15000,
+              "cooldownMs": 20000,
+              "effectPolicy": "persist",
+              "castTiming": null,
+              "castEstimateMs": 1800,
+              "lockOverrideMs": null,
+              "castInputMs": null,
+              "followSourceId": null,
+              "effectSource": "catalog",
+              "hold": false,
+              "followAttack": false,
+              "attackAfterMs": 0,
+              "ensureCast": false,
+              "condition": "",
+              "readiness": "burst",
+              "notReady": "skip",
+              "protectCast": true,
+              "operation": {
+                "direction": "w",
+                "keys": "W",
+                "button": "left",
+                "x": 300,
+                "y": 0
+              },
+              "operations": [],
+              "sourceAction": null,
+              "commandOverride": null
+            },
+            {
+              "id": "clip3",
+              "name": "片段3",
+              "order": 3,
+              "characterId": "10000025",
+              "abilityId": "skill",
+              "startMs": 2300,
+              "foregroundMs": 1000,
+              "effectMs": 15000,
+              "cooldownMs": 21000,
+              "effectPolicy": "persist",
+              "castTiming": null,
+              "castEstimateMs": 900,
+              "lockOverrideMs": null,
+              "castInputMs": null,
+              "followSourceId": null,
+              "effectSource": "catalog",
+              "hold": false,
+              "followAttack": false,
+              "attackAfterMs": 0,
+              "ensureCast": true,
+              "condition": "",
+              "readiness": "skill",
+              "notReady": "wait",
+              "protectCast": true,
+              "operation": {
+                "direction": "w",
+                "keys": "W",
+                "button": "left",
+                "x": 300,
+                "y": 0
+              },
+              "operations": [],
+              "sourceAction": null,
+              "commandOverride": null
+            },
+            {
+              "id": "clip4",
+              "name": "片段4",
+              "order": 4,
+              "characterId": "10000032",
+              "abilityId": "burst",
+              "startMs": 3300,
+              "foregroundMs": 1200,
+              "effectMs": 12000,
+              "cooldownMs": 15000,
+              "effectPolicy": "persist",
+              "castTiming": null,
+              "castEstimateMs": 1800,
+              "lockOverrideMs": null,
+              "castInputMs": null,
+              "followSourceId": null,
+              "effectSource": "catalog",
+              "hold": false,
+              "followAttack": false,
+              "attackAfterMs": 0,
+              "ensureCast": false,
+              "condition": "",
+              "readiness": "burst",
+              "notReady": "skip",
+              "protectCast": true,
+              "operation": {
+                "direction": "w",
+                "keys": "W",
+                "button": "left",
+                "x": 300,
+                "y": 0
+              },
+              "operations": [],
+              "sourceAction": null,
+              "commandOverride": null
+            },
+            {
+              "id": "clip5",
+              "name": "片段5",
+              "order": 5,
+              "characterId": "10000032",
+              "abilityId": "skill",
+              "startMs": 4500,
+              "foregroundMs": 700,
+              "effectMs": 0,
+              "cooldownMs": 5000,
+              "effectPolicy": "persist",
+              "castTiming": null,
+              "castEstimateMs": 900,
+              "lockOverrideMs": null,
+              "castInputMs": null,
+              "followSourceId": null,
+              "effectSource": "catalog",
+              "hold": false,
+              "followAttack": false,
+              "attackAfterMs": 0,
+              "ensureCast": true,
+              "condition": "",
+              "readiness": "skill",
+              "notReady": "wait",
+              "protectCast": true,
+              "operation": {
+                "direction": "w",
+                "keys": "W",
+                "button": "left",
+                "x": 300,
+                "y": 0
+              },
+              "operations": [],
+              "sourceAction": null,
+              "commandOverride": null
+            },
+            {
+              "id": "clip6",
+              "name": "片段6",
+              "order": 6,
+              "characterId": "10000023",
+              "abilityId": "burst",
+              "startMs": 5200,
+              "foregroundMs": 1400,
+              "effectMs": 10000,
+              "cooldownMs": 20000,
+              "effectPolicy": "persist",
+              "castTiming": null,
+              "castEstimateMs": 1800,
+              "lockOverrideMs": null,
+              "castInputMs": null,
+              "followSourceId": null,
+              "effectSource": "catalog",
+              "hold": false,
+              "followAttack": false,
+              "attackAfterMs": 0,
+              "ensureCast": false,
+              "condition": "",
+              "readiness": "burst",
+              "notReady": "skip",
+              "protectCast": true,
+              "operation": {
+                "direction": "w",
+                "keys": "W",
+                "button": "left",
+                "x": 300,
+                "y": 0
+              },
+              "operations": [],
+              "sourceAction": null,
+              "commandOverride": null
+            },
+            {
+              "id": "clip7",
+              "name": "片段7",
+              "order": 7,
+              "characterId": "10000023",
+              "abilityId": "skill",
+              "startMs": 6600,
+              "foregroundMs": 900,
+              "effectMs": 0,
+              "cooldownMs": 12000,
+              "effectPolicy": "persist",
+              "castTiming": null,
+              "castEstimateMs": 900,
+              "lockOverrideMs": null,
+              "castInputMs": null,
+              "followSourceId": null,
+              "effectSource": "catalog",
+              "hold": false,
+              "followAttack": false,
+              "attackAfterMs": 0,
+              "ensureCast": true,
+              "condition": "",
+              "readiness": "skill",
+              "notReady": "wait",
+              "protectCast": true,
+              "operation": {
+                "direction": "w",
+                "keys": "W",
+                "button": "left",
+                "x": 300,
+                "y": 0
+              },
+              "operations": [],
+              "sourceAction": null,
+              "commandOverride": null
+            },
+            {
+              "id": "clip8",
+              "name": "片段8",
+              "order": 8,
+              "characterId": "10000052",
+              "abilityId": "burst",
+              "startMs": 7500,
+              "foregroundMs": 1800,
+              "effectMs": 7000,
+              "cooldownMs": 18000,
+              "effectPolicy": "onfield",
+              "castTiming": null,
+              "castEstimateMs": 1800,
+              "lockOverrideMs": null,
+              "castInputMs": null,
+              "followSourceId": null,
+              "effectSource": "catalog",
+              "hold": false,
+              "followAttack": false,
+              "attackAfterMs": 0,
+              "ensureCast": false,
+              "condition": "",
+              "readiness": "burst",
+              "notReady": "skip",
+              "protectCast": true,
+              "operation": {
+                "direction": "w",
+                "keys": "W",
+                "button": "left",
+                "x": 300,
+                "y": 0
+              },
+              "operations": [],
+              "sourceAction": null,
+              "commandOverride": null
+            },
+            {
+              "id": "clip9",
+              "name": "片段9",
+              "order": 9,
+              "characterId": "10000052",
+              "abilityId": "attack",
+              "startMs": 9300,
+              "foregroundMs": 1500,
+              "effectMs": 0,
+              "cooldownMs": 0,
+              "effectPolicy": "persist",
+              "castTiming": null,
+              "castEstimateMs": 2000,
+              "lockOverrideMs": null,
+              "castInputMs": null,
+              "followSourceId": null,
+              "effectSource": "catalog",
+              "hold": false,
+              "followAttack": false,
+              "attackAfterMs": 0,
+              "ensureCast": false,
+              "condition": "",
+              "readiness": "none",
+              "notReady": "wait",
+              "protectCast": true,
+              "operation": {
+                "direction": "w",
+                "keys": "W",
+                "button": "left",
+                "x": 300,
+                "y": 0
+              },
+              "operations": [],
+              "sourceAction": null,
+              "commandOverride": null
+            },
+            {
+              "id": "clip10",
+              "name": "片段10",
+              "order": 10,
+              "characterId": "10000052",
+              "abilityId": "wait",
+              "startMs": 10800,
+              "foregroundMs": 200,
+              "effectMs": 0,
+              "cooldownMs": 0,
+              "effectPolicy": "persist",
+              "castTiming": null,
+              "castEstimateMs": 500,
+              "lockOverrideMs": null,
+              "castInputMs": null,
+              "followSourceId": null,
+              "effectSource": "catalog",
+              "hold": false,
+              "followAttack": false,
+              "attackAfterMs": 0,
+              "ensureCast": false,
+              "condition": "",
+              "readiness": "none",
+              "notReady": "wait",
+              "protectCast": true,
+              "operation": {
+                "direction": "w",
+                "keys": "W",
+                "button": "left",
+                "x": 300,
+                "y": 0
+              },
+              "operations": [],
+              "sourceAction": null,
+              "commandOverride": null
+            },
+            {
+              "id": "clip11",
+              "name": "片段11",
+              "order": 11,
+              "characterId": "10000052",
+              "abilityId": "attack",
+              "startMs": 11000,
+              "foregroundMs": 1500,
+              "effectMs": 0,
+              "cooldownMs": 0,
+              "effectPolicy": "persist",
+              "castTiming": null,
+              "castEstimateMs": 2000,
+              "lockOverrideMs": null,
+              "castInputMs": null,
+              "followSourceId": null,
+              "effectSource": "catalog",
+              "hold": false,
+              "followAttack": false,
+              "attackAfterMs": 0,
+              "ensureCast": false,
+              "condition": "",
+              "readiness": "none",
+              "notReady": "wait",
+              "protectCast": true,
+              "operation": {
+                "direction": "w",
+                "keys": "W",
+                "button": "left",
+                "x": 300,
+                "y": 0
+              },
+              "operations": [],
+              "sourceAction": null,
+              "commandOverride": null
+            },
+            {
+              "id": "clip12",
+              "name": "片段12",
+              "order": 12,
+              "characterId": "10000052",
+              "abilityId": "attack",
+              "startMs": 12500,
+              "foregroundMs": 2000,
+              "effectMs": 0,
+              "cooldownMs": 0,
+              "effectPolicy": "persist",
+              "castTiming": null,
+              "castEstimateMs": 2000,
+              "lockOverrideMs": null,
+              "castInputMs": null,
+              "followSourceId": null,
+              "effectSource": "catalog",
+              "hold": false,
+              "followAttack": false,
+              "attackAfterMs": 0,
+              "ensureCast": false,
+              "condition": "",
+              "readiness": "none",
+              "notReady": "wait",
+              "protectCast": true,
+              "operation": {
+                "direction": "w",
+                "keys": "W",
+                "button": "left",
+                "x": 300,
+                "y": 0
+              },
+              "operations": [],
+              "sourceAction": null,
+              "commandOverride": null
+            }
+          ],
+          "nextId": 13,
+          "preActions": [],
+          "sourceInfo": {},
+          "sourceRoot": {},
+          "roleSlots": []
+        }
+      }
+    }
+  },
+  "Actions": [
+    {
+      "Name": "片段1",
+      "Character": "雷电将军",
+      "Action": "skill",
+      "Condition": {
+        "Expression": "(count(片段1) = count(Waitclip12)) && ((e-ready(雷电将军)))"
+      },
+      "Index": 0,
+      "EnsureCast": true,
+      "MorePriorities": []
+    },
+    {
+      "Name": "Waitclip1",
+      "Character": "",
+      "Action": "wait(0.1)",
+      "Condition": {
+        "Expression": "(count(片段1) > count(Waitclip1)) && (true)"
+      },
+      "Index": 12,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "Switchclip2",
+      "Character": "行秋",
+      "Action": "wait(0.01)",
+      "Condition": {
+        "Expression": "(count(Waitclip1) > count(Switchclip2)) && (!(since(Switchclip8) < 1)) && (true)"
+      },
+      "Index": 13,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "片段2",
+      "Character": "行秋",
+      "Action": "burst,ready",
+      "Condition": {
+        "Expression": "(count(Switchclip2) > (count(片段2) + count(Skipclip2))) && ((q-ready(行秋)))"
+      },
+      "Index": 1,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "Skipclip2",
+      "Character": "",
+      "Action": "wait(0.01)",
+      "Condition": {
+        "Expression": "(count(Switchclip2) > (count(片段2) + count(Skipclip2))) && (!((q-ready(行秋))))"
+      },
+      "Index": 19,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "片段3",
+      "Character": "行秋",
+      "Action": "skill",
+      "Condition": {
+        "Expression": "((count(片段2) + count(Skipclip2)) > count(片段3)) && ((e-ready(行秋)))"
+      },
+      "Index": 2,
+      "EnsureCast": true,
+      "MorePriorities": []
+    },
+    {
+      "Name": "Waitclip3",
+      "Character": "",
+      "Action": "wait(0.1)",
+      "Condition": {
+        "Expression": "(count(片段3) > count(Waitclip3)) && (true)"
+      },
+      "Index": 14,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "Switchclip4",
+      "Character": "班尼特",
+      "Action": "wait(0.01)",
+      "Condition": {
+        "Expression": "(count(Waitclip3) > count(Switchclip4)) && (!(since(Switchclip2) < 1)) && (true)"
+      },
+      "Index": 15,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "片段4",
+      "Character": "班尼特",
+      "Action": "burst,ready",
+      "Condition": {
+        "Expression": "(count(Switchclip4) > (count(片段4) + count(Skipclip4))) && ((q-ready(班尼特)))"
+      },
+      "Index": 3,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "Skipclip4",
+      "Character": "",
+      "Action": "wait(0.01)",
+      "Condition": {
+        "Expression": "(count(Switchclip4) > (count(片段4) + count(Skipclip4))) && (!((q-ready(班尼特))))"
+      },
+      "Index": 20,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "片段5",
+      "Character": "班尼特",
+      "Action": "skill",
+      "Condition": {
+        "Expression": "((count(片段4) + count(Skipclip4)) > count(片段5)) && ((e-ready(班尼特)))"
+      },
+      "Index": 4,
+      "EnsureCast": true,
+      "MorePriorities": []
+    },
+    {
+      "Name": "Switchclip6",
+      "Character": "香菱",
+      "Action": "wait(0.01)",
+      "Condition": {
+        "Expression": "(count(片段5) > count(Switchclip6)) && (!(since(Switchclip4) < 1)) && (true)"
+      },
+      "Index": 16,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "片段6",
+      "Character": "香菱",
+      "Action": "burst,ready",
+      "Condition": {
+        "Expression": "(count(Switchclip6) > (count(片段6) + count(Skipclip6))) && ((q-ready(香菱)))"
+      },
+      "Index": 5,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "Skipclip6",
+      "Character": "",
+      "Action": "wait(0.01)",
+      "Condition": {
+        "Expression": "(count(Switchclip6) > (count(片段6) + count(Skipclip6))) && (!((q-ready(香菱))))"
+      },
+      "Index": 21,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "片段7",
+      "Character": "香菱",
+      "Action": "skill",
+      "Condition": {
+        "Expression": "((count(片段6) + count(Skipclip6)) > count(片段7)) && ((e-ready(香菱)))"
+      },
+      "Index": 6,
+      "EnsureCast": true,
+      "MorePriorities": []
+    },
+    {
+      "Name": "Switchclip8",
+      "Character": "雷电将军",
+      "Action": "wait(0.01)",
+      "Condition": {
+        "Expression": "(count(片段7) > count(Switchclip8)) && (!(since(Switchclip6) < 1)) && (true)"
+      },
+      "Index": 17,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "片段8",
+      "Character": "雷电将军",
+      "Action": "burst,ready",
+      "Condition": {
+        "Expression": "(count(Switchclip8) > (count(片段8) + count(Skipclip8))) && ((q-ready(雷电将军)))"
+      },
+      "Index": 7,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "Skipclip8",
+      "Character": "",
+      "Action": "wait(0.01)",
+      "Condition": {
+        "Expression": "(count(Switchclip8) > (count(片段8) + count(Skipclip8))) && (!((q-ready(雷电将军))))"
+      },
+      "Index": 22,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "片段9",
+      "Character": "雷电将军",
+      "Action": "attack(1.5)",
+      "Condition": {
+        "Expression": "((count(片段8) + count(Skipclip8)) > count(片段9)) && (true)"
+      },
+      "Index": 8,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "片段10",
+      "Character": "雷电将军",
+      "Action": "wait(0.2)",
+      "Condition": {
+        "Expression": "(count(片段9) > count(片段10)) && (true)"
+      },
+      "Index": 9,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "片段11",
+      "Character": "雷电将军",
+      "Action": "attack(1.5)",
+      "Condition": {
+        "Expression": "(count(片段10) > count(片段11)) && (true)"
+      },
+      "Index": 10,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "片段12",
+      "Character": "雷电将军",
+      "Action": "attack(2)",
+      "Condition": {
+        "Expression": "(count(片段11) > count(片段12)) && (true)"
+      },
+      "Index": 11,
+      "EnsureCast": false,
+      "MorePriorities": []
+    },
+    {
+      "Name": "Waitclip12",
+      "Character": "",
+      "Action": "wait(9.5)",
+      "Condition": {
+        "Expression": "(count(片段12) > count(Waitclip12)) && (true)"
+      },
+      "Index": 18,
+      "EnsureCast": false,
+      "MorePriorities": []
+    }
+  ]
+}

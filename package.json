@@ -1,0 +1,60 @@
+{
+  "name": "bettergi-combat-editor",
+  "version": "0.1.0",
+  "description": "A visual combat timeline and process editor for BetterGI JSON strategies.",
+  "author": "Myx144",
+  "license": "MIT",
+  "main": "electron/main.cjs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Myx144/bettergi-combat-editor.git"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
+    "start": "electron .",
+    "test": "node --require ./tests/fixtures.cjs --test",
+    "check": "node tools/check.cjs",
+    "build:catalog": "node tools/build-catalog.cjs",
+    "dist:win": "electron-builder --win portable zip --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.9.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "io.github.myx144.bettergi-combat-editor",
+    "productName": "BetterGI Combat Editor",
+    "asar": true,
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "index.html",
+      "editor.css",
+      "editor.js",
+      "model.js",
+      "operations.js",
+      "roles.js",
+      "catalog.js",
+      "cast-timings.js",
+      "vendor/**",
+      "electron/**",
+      "licenses/**",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md"
+    ],
+    "win": {
+      "target": ["portable", "zip"],
+      "signAndEditExecutable": false,
+      "artifactName": "BetterGI-Combat-Editor-${version}-win-${arch}.${ext}"
+    },
+    "portable": {
+      "requestExecutionLevel": "user"
+    },
+    "publish": null
+  }
+}

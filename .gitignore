@@ -1,0 +1,8 @@
+node_modules/
+release/
+.cache/
+test-results/
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
