@@ -31,7 +31,7 @@
     }
     function open(clipId = null, view = 'edit') {
       const project = getProject(), clip = project.clips.find(row => row.id === clipId);
-      current = {clipId: clip?.id || null, view: clip ? view : 'guide', category: '技能与角色',
+      current = {clipId: clip?.id || null, view: clip || view === 'queue' ? view : 'guide', category: '技能与角色',
         guide: 'start', changed: false, error: '', entries: clip
           ? R.draft(clip, M.priorityOf(clip), M.prioritiesOf(clip), actionNames()) : [], active: null};
       current.active = current.entries[0]?.tree.id || null;
@@ -155,27 +155,73 @@
         const clip = project.clips.find(row => row.id === current.clipId);
         Object.assign(clip, R.patch(current.entries, actionNames(), project.scheduling === 'original'));
       }
+      if (M.hasTeams(project)) {
+        return {Actions: M.teamPreview(project, catalog, project.activeTeamId)};
+      }
       return M.exportStrategy(project, catalog);
     }
     function paintQueue() {
       try {
-        const strategy = previewStrategy(), queue = R.expand(strategy);
+        const project = getProject(), strategy = previewStrategy();
+        const plan = M.hasTeams(project) ? M.activeTeam(project) : null;
+        const party = plan?.roster.map(id => M.character(catalog, id).name) || null;
+        const queue = R.expand(strategy, party);
+        const labels = plan && M.teamActionLabels ? M.teamActionLabels(project, catalog, plan.id) : null;
+        const labelOf = name => labels instanceof Map ? labels.get(name) || name : labels?.[name] || name;
         const known = queue.map(row => row.name);
+        const description = expression => {
+          if (!labels) return R.describe(R.decode(expression, known));
+          try {
+            const rename = node => {
+              if (node.type === 'identifier') return {...node, name: labelOf(node.name)};
+              if (node.type === 'unary') return {...node, value: rename(node.value)};
+              if (node.type === 'binary') return {...node, left: rename(node.left), right: rename(node.right)};
+              if (node.type === 'call') return {...node, args: node.args.map(rename)};
+              return node;
+            };
+            return R.describe(R.decode(R.stringify(rename(R.parse(expression, known))),
+              known.map(labelOf)));
+          } catch { return R.describe(R.decode(expression, known)); }
+        };
         $('priorityQueue').innerHTML = queue.map((row, index) => {
           const character = catalog.characters.find(character => character.name === row.character);
           return `<li class="priority-queue-row" style="--queue-color:${character?.color || '#788798'}">
             <span class="queue-rank">${index + 1}</span><strong class="queue-priority">${row.priority}</strong>
-            <div class="queue-rule"><div><strong>${html(row.name || '未命名动作')}</strong><span>${html(row.kind)}</span></div>
-              <p>${html(R.describe(R.decode(row.expression, known)))}</p>
+            <div class="queue-rule"><div><strong>${html(labelOf(row.name) || '未命名动作')}</strong><span>${html(row.kind)}</span></div>
+              <p>${html(description(row.expression))}</p>
               <details><summary>原生表达式与指令</summary><code>${html(row.expression) || '(空条件，始终成立)'}</code>
-                <code>${html(row.command)}</code></details></div>
+                <code>${html(row.command)}</code>${plan ? `<code>Name: ${html(row.name)}</code>` : ''}</details></div>
             <span class="queue-owner">${html(row.character || '沿用当前角色')}<small>Index ${row.index} · 声明 ${row.declaration + 1}</small></span>
           </li>`;
         }).join('') || '<li class="rule-note">尚无动作。</li>';
-        $('queueStats').textContent = `${strategy.Actions.length} 个动作 → ${queue.length} 个排序条目`;
-        const unconditional = queue.findIndex(row => !row.expression.trim() || row.expression.trim() === 'true');
-        $('queueWarning').textContent = unconditional >= 0 && unconditional < queue.length - 1
-          ? `第 ${unconditional + 1} 项没有触发限制；它一旦可执行，后面的条目可能一直轮不到。` : '';
+        $('queueStats').textContent = `${plan ? `${plan.name} · ` : ''}${strategy.Actions.length} 个动作 → ${queue.length} 个排序条目`;
+        const fixed = node => {
+          if (node.type === 'bool') return node.value;
+          if (node.type === 'number') return node.value > 0;
+          if (node.type === 'call' && node.name === 'in-party' && party && node.args[0]?.type === 'identifier')
+            return party.some(name => name.toLowerCase() === node.args[0].name.toLowerCase());
+          if (node.type === 'unary' && node.operator === '!') {
+            const value = fixed(node.value);
+            return value === null ? null : !value;
+          }
+          if (node.type === 'binary' && ['&&', '||'].includes(node.operator)) {
+            const left = fixed(node.left), right = fixed(node.right);
+            return node.operator === '&&' ? left === false || right === false ? false
+              : left === true && right === true ? true : null
+              : left === true || right === true ? true : left === false && right === false ? false : null;
+          }
+          return null;
+        };
+        const unconditional = queue.findIndex(row => {
+          try { return fixed(R.parse(row.expression, known)) === true; }
+          catch { return false; }
+        });
+        $('queueWarning').textContent = [
+          plan && !plan.enabled ? '当前队伍已停用；此处为本队草稿预览，不参与联合导出。' : '',
+          plan && plan.roster.length !== 4 ? '阵容尚未配置完整，当前规则不能参与联合导出。' : '',
+          unconditional >= 0 && unconditional < queue.length - 1
+            ? `第 ${unconditional + 1} 项没有触发限制；它一旦可执行，后面的条目可能一直轮不到。` : ''
+        ].filter(Boolean).join(' ');
       } catch (error) {
         $('priorityQueue').innerHTML = `<li class="form-error">${html(error.message)}</li>`;
         $('queueStats').textContent = '条件修改后可重新检查队列';
@@ -183,6 +229,14 @@
       }
     }
     function guideContent(section) {
+      if (section === 'teams') return `<h3>一份 JSON 适配多支队伍</h3>
+        <p>在队伍管理中为每支队伍选择完整四人阵容，分别编辑动作、条件与优先级。没有安排动作的成员也属于阵容。启用的队伍一起导出，切换当前队伍只改变编辑对象。</p>
+        <h4>同角色，不同打法</h4><p>雷国与万达都可以包含班尼特和香菱，但站场角色、充能与动作依赖不同。关联面板按队伍展示同一角色的规则，不会自动同步或替换。雷神在雷国站场开大，在某些超绽队只放 E；这些差异需要分别配置。</p>
+        <h4>实际四人队决定启用哪套规则</h4><p>联合导出给每队的主触发及全部额外触发添加阵容条件，保留原有优先级。历史名称按队伍隔离，队内跨角色的次数、间隔和时间窗口仍然保留。</p>
+        <h4>同阵容的两个方案需要选择</h4><p>执行器无法仅凭四人名单知道谁带了哪套装备。两个启用方案可能匹配同一实际队伍时，联合导出会提示冲突；停用其中一套后再导出。不会替玩家猜选哪种打法。</p>
+        <h4>开场动作和公共配置只有一份</h4><p>原生 Info.PreActions 不支持队伍条件。导入的各队开场动作或公共配置不同，需要在队伍管理中明确沿用其中一队的设置，或分别导出。队伍专属开场可以由作者改写为带 count 与条件的普通动作，再自行验证。</p>
+        <h4>TXT 导出当前队伍</h4><p>TXT 按命令顺序执行，不能承载 JSON 的条件与优先级。工程保留其他队伍，TXT 每次只导出当前队伍。</p>
+        <p>配队差异参考 KQM 香菱 4.5、公子 4.0、雷神 5.7 指南；用于说明实际依赖，不代表当前强度排名。完整出处与作者 JSON 实例见开源仓库 docs/multi-team-workflows.md。</p>`;
       if (section === 'functions') return `<h3>原生支持的全部 14 个函数</h3>
         <p>方括号表示可省略的参数，不是实际语法。时间函数统一按秒使用；名字不加引号。</p>
         <div class="function-reference">${R.functions.map(item => `<article><h4>${html(item.title)}</h4>
@@ -239,7 +293,8 @@
           <li>何时允许？先拖就绪条件，再按需要叠加时间、次数或前置动作。</li><li>和其他动作谁先？查看全局队列，核对额外触发与同优先级顺序。</li></ol>`;
     }
     function paintGuide() {
-      const tabs = [['start', '入门'], ['priority', '优先级'], ['functions', '函数'], ['examples', '示例'], ['limits', '执行边界']];
+      const tabs = [['start', '入门'], ['priority', '优先级'], ['functions', '函数'], ['examples', '示例'],
+        ['teams', '多队伍'], ['limits', '执行边界']];
       $('ruleGuideTabs').innerHTML = tabs.map(([key, label]) => `<button type="button" data-guide-section="${key}"
         class="${current.guide === key ? 'selected' : ''}" aria-pressed="${current.guide === key}">${label}</button>`).join('');
       $('ruleGuideContent').innerHTML = guideContent(current.guide);
@@ -250,11 +305,12 @@
       const priority = active?.dataset.rulePriority;
       const position = active?.selectionStart;
       const clip = getProject().clips.find(row => row.id === current.clipId);
-      $('rulesTitle').textContent = clip ? `${M.character(catalog, clip.characterId).name} · ${clip.name}` : 'JSON 执行指南';
+      $('rulesTitle').textContent = clip ? `${clip.useCurrentCharacter ? '当前前台角色' : M.character(catalog, clip.characterId).name} · ${clip.name || '未命名动作'}`
+        : current.view === 'queue' ? 'JSON 优先级队列' : 'JSON 执行指南';
       for (const tab of dialog.querySelectorAll('[data-rules-view]')) {
         tab.classList.toggle('selected', tab.dataset.rulesView === current.view);
         tab.setAttribute('aria-selected', String(tab.dataset.rulesView === current.view));
-        tab.disabled = !clip && tab.dataset.rulesView !== 'guide';
+        tab.disabled = !clip && tab.dataset.rulesView === 'edit';
       }
       $('ruleEditView').hidden = current.view !== 'edit';
       $('ruleQueueView').hidden = current.view !== 'queue';

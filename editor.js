@@ -20,6 +20,7 @@
   const mobileLayout = matchMedia('(max-width: 710px)');
   const mobileControls = [
     ['projectHeading', 'mobileProjectSlot'], ['strategyModeControl', 'mobileFormatSlot'], ['executionMode', 'mobileModeSlot'],
+    ['teamControls', 'mobileTeamSlot'],
     ['libraryToggle', 'mobileLibrarySlot'], ['inspectorToggle', 'mobileInspectorSlot'],
     ['fitLoop', 'mobileFitLoopSlot'], ['undo', 'mobileUndoSlot'], ['redo', 'mobileRedoSlot'],
     ['zoomOut', 'mobileZoomOutSlot'], ['zoom', 'mobileZoomSlot'], ['zoomIn', 'mobileZoomInSlot'],
@@ -45,8 +46,10 @@
   }
   state.selected = state.project.clips[0]?.id || null;
   state.selection = state.selected ? [state.selected] : [];
-  window.CombatRuleEditor.create({model: M, catalog, getProject: () => state.project,
+  const ruleEditor = window.CombatRuleEditor.create({model: M, catalog, getProject: () => state.project,
     change, icons, toast, getSelected: selectedClip});
+  const teamEditor = window.CombatTeamEditor.create({model: M, catalog, getProject: () => state.project,
+    change, icons, toast, onSwitch: teamChanged, openQueue: () => ruleEditor.open(null, 'queue')});
 
   function icons() { window.lucide?.createIcons(); }
   function avatarHtml(character, className = '') {
@@ -70,6 +73,11 @@
   }
   function selectedAbility(clip) {
     const skill = M.ability(catalog, clip.characterId, clip.abilityId);
+    if (clip.useCurrentCharacter) {
+      const names = {skill: '元素战技', burst: '元素爆发', attack: '普攻', charge: '重击'};
+      if (names[clip.abilityId]) return {...skill, name: names[clip.abilityId], icon: null,
+        iconName: clip.abilityId === 'skill' ? 'zap' : clip.abilityId === 'burst' ? 'sparkles' : 'swords'};
+    }
     return clip.abilityId === 'attack' ? {...skill, name: '普攻'} : skill;
   }
   function labelWidth() { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--label-width')); }
@@ -102,6 +110,7 @@
 
   function persist() {
     try {
+      M.syncTeams(state.project);
       localStorage.setItem(storageKey, JSON.stringify(state.project));
       $('saveState').textContent = '草稿已保存';
     } catch {
@@ -148,6 +157,25 @@
     setSelection(state.selection.length ? state.selection : [state.project.clips[0]?.id]);
     persist();
     paint();
+  }
+
+  function teamChanged({characterId} = {}) {
+    pause();
+    closeQuickAdd();
+    closeRoleSwitcher();
+    state.drag = null;
+    const first = state.project.clips.find(clip => !characterId || clip.characterId === characterId);
+    setSelection(first ? [first.id] : []);
+    state.playheadMs = 0;
+    state.cycle = 1;
+    state.hasLooped = false;
+    state.libraryFocus = characterId || M.activeTeam(state.project)?.roster[0]
+      || state.project.team[0] || state.libraryFocus;
+    mobilePreviewKey = null;
+    $('timelineScroller').scrollLeft = 0;
+    $('timelineScroller').scrollTop = 0;
+    paint();
+    window.dispatchEvent(new CustomEvent('combat:team-changed'));
   }
 
   function paintLibrary() {
@@ -295,6 +323,8 @@
     const connectionY = 75 + actionHeight / 2;
     const rows = M.ordered(project);
     const runs = M.foregroundRuns(project);
+    const plan = M.hasTeams(project) ? M.activeTeam(project) : null;
+    const relations = new Map(M.teamRelations(project).map(row => [row.characterId, row.teamIds]));
     const runForClip = new Map(runs.flatMap(run => run.clips.map(clip => [clip.id, run])));
     const issues = M.validate(project, catalog);
     const errors = issues.filter(issue => issue.severity !== 'warning');
@@ -344,7 +374,7 @@
         const entrance = run.clips[0].id === clip.id;
         const pending = ['skill', 'burst'].includes(clip.abilityId) && lock === null;
         const canTrim = !M.isFixedAction(clip);
-        const title = `${character.name} · ${skill.name}\n${time(clip.startMs)}–${time(M.endOf(clip))}s` +
+        const title = `${clip.useCurrentCharacter ? '当前前台角色' : character.name} · ${skill.name}\n${time(clip.startMs)}–${time(M.endOf(clip))}s` +
           (lock !== null ? `\n释放换人锁定 ${M.seconds(lock)}s` : ['skill', 'burst'].includes(clip.abilityId) ? '\n释放锁定待实测' : '');
         const effectSize = Math.max(0, M.effectEnd(project, clip) - clip.startMs) / 1000 * state.zoom;
         const effectTop = actionHeight + (clip.abilityId === 'burst' ? 32 : 8);
@@ -357,7 +387,8 @@
           style="left:${left}px;width:${Math.max(8, actionSize)}px">
           <div class="clip-action ${pending ? 'pending-cast' : ''}" data-cast="${clip.id}"
             style="width:${castSize}px" title="${pending ? '释放时长待实测' : `动作时长 ${M.seconds(castMs)} 秒`}">
-            ${entrance ? avatarHtml(character, 'clip-avatar') : ''}${skillImage(skill, 'clip-skill-icon')}
+            ${entrance ? clip.useCurrentCharacter ? `<span class="generic-avatar">${icon('user-round')}</span>`
+              : avatarHtml(character, 'clip-avatar') : ''}${skillImage(skill, 'clip-skill-icon')}
             <span class="clip-title"><strong>${html(skill.name)}</strong><small>${skill.key}
               · ${pending ? '待实测' : `${time(castMs)}s`}</small></span>
             <span class="clip-key" aria-hidden="true">${skill.key}</span>
@@ -405,8 +436,12 @@
           <div class="track-heading"><button class="track-add-source" draggable="true" data-track-avatar="${id}"
             type="button" title="拖入${html(character.name)}的技能" aria-label="拖入${html(character.name)}的技能">${avatarHtml(character, 'track-avatar')}</button>
             <div class="track-name">${html(character.name)}<span class="track-index">${
-              role.candidates.length > 1 || role.role !== 'flex' ? html(roleName) : `角色 ${index + 1}`}</span></div></div>
-          <div class="track-states" data-states="${id}"><span>E 就绪</span><span>Q 就绪</span></div>
+              plan && !plan.roster.includes(id) ? '阵容外动作' : role.candidates.length > 1 || role.role !== 'flex'
+                ? html(roleName) : `角色 ${index + 1}`}</span></div>
+            ${relations.has(id) ? `<button type="button" class="icon-button track-shared" data-shared-character="${id}"
+              title="${html(character.name)}关联 ${relations.get(id).length} 支队伍" aria-label="查看${html(character.name)}的队伍关联">
+              ${icon('link-2')}<span>${relations.get(id).length}</span></button>` : ''}</div>
+          <div class="track-states" data-states="${id}"></div>
           <button class="icon-button track-role-toggle ${role.candidates.length > 1 ? 'has-branches' : ''}"
             data-role-toggle="${id}" type="button" aria-expanded="${state.roleSwitcher?.characterId === id}"
             aria-controls="roleSwitcher" title="${html(character.name)} · 角色定位与兼容分支"
@@ -444,7 +479,7 @@
         aria-hidden="true" style="left:${labelWidth() + state.drag.snapMs / 1000 * state.zoom}px"></div>` : ''}
       <div class="playhead" id="playhead" style="left:${labelWidth() + state.playheadMs / 1000 * state.zoom}px"></div>`;
     const overviewRows = conditional ? M.declared(project).sort((a, b) => M.priorityOf(a) - M.priorityOf(b)) : rows;
-    $('sequenceLabel').textContent = conditional ? '规则优先级' : M.isText(project) ? '命令顺序' : '动作顺序';
+    $('sequenceLabel').textContent = conditional ? '主触发' : M.isText(project) ? '命令顺序' : '动作顺序';
     $('sequenceList').innerHTML = overviewRows.map((clip, index) => {
       const character = M.character(catalog, clip.characterId), skill = selectedAbility(clip);
       return `${index && !conditional ? icon('chevron-right').replace('data-lucide', 'class="sequence-arrow" data-lucide') : ''}
@@ -512,8 +547,9 @@
       const character = M.character(catalog, clip.characterId), skill = selectedAbility(clip);
       const duration = M.castDurationMs(clip), pending = ['skill', 'burst'].includes(clip.abilityId) && M.castLockMs(clip) === null;
       preview.style.cssText = css(character);
-      preview.innerHTML = `${avatarHtml(character, 'mobile-preview-avatar')}
-        <div class="mobile-preview-text"><strong>${html(character.name)} · ${html(skill.name)}</strong>
+      preview.innerHTML = `${clip.useCurrentCharacter ? `<span class="generic-avatar">${icon('user-round')}</span>`
+        : avatarHtml(character, 'mobile-preview-avatar')}
+        <div class="mobile-preview-text"><strong>${clip.useCurrentCharacter ? '当前前台角色' : html(character.name)} · ${html(skill.name)}</strong>
         <small>动作 ${rows.indexOf(clip) + 1} / ${rows.length} · 参考 ${time(clip.startMs)}s · ${
           pending ? '释放待实测' : `${M.seconds(duration)}s`}${state.selection.length > 1 ? ` · 选中 ${state.selection.length} 项` : ''}</small></div>
         ${skillImage(skill, 'mobile-preview-skill')}`;
@@ -530,6 +566,7 @@
 
   function timingFields(clip) {
     if (!['skill', 'burst', 'charge'].includes(clip.abilityId)) return '';
+    if (clip.useCurrentCharacter) return '';
     const variants = M.timingVariants(clip.characterId, clip.abilityId);
     const timing = clip.castTiming, lock = M.castLockMs(clip);
     const label = value => value.replace(/^Cast$/, '施放').replace(/^(Press|Tap)$/, '点按')
@@ -601,6 +638,7 @@
     const summary = window.CombatConditions.describe(window.CombatConditions.decode(clip.condition,
       state.project.clips.map(row => row.name)));
     return `<section class="inspector-section"><h3>JSON 触发条件</h3>${schedulingControl()}
+      ${clip.useCurrentCharacter ? '<div class="execution-state">沿用执行器当前角色 · Character 留空</div>' : ''}
       ${native ? `<label class="field"><span>动作优先级 · 数字越小越优先</span><input type="number" step="1"
         data-property="priority" aria-label="动作优先级" value="${html(M.priorityOf(clip))}"></label>` : ''}
       ${M.isProcess(state.project) && clip.followSourceId ? `<label class="checkbox-label"><input type="checkbox" data-property="followSourceId"
@@ -647,10 +685,13 @@
       button.setAttribute('aria-pressed', String(selected));
     }
     $('executionMode').hidden = format === 'txt';
-    $('exportStrategy').querySelector('span').textContent = `导出战斗 ${format.toUpperCase()}`;
-    $('exportStrategy').title = `导出战斗 ${format.toUpperCase()}`;
+    const exportLabel = M.hasTeams(state.project)
+      ? format === 'txt' ? '导出本队 TXT' : '导出合并 JSON' : `导出战斗 ${format.toUpperCase()}`;
+    $('exportStrategy').querySelector('span').textContent = exportLabel;
+    $('exportStrategy').title = exportLabel;
     $('repeatLabel').textContent = format === 'txt' || state.project.scheduling === 'original' ? '预览循环' : '循环';
     $('newFormat').value = format;
+    $('play').title = state.project.scheduling === 'original' ? '播放参考轴' : '播放排轴预览';
   }
 
   function operationInputs(operation, index = null, characterId = null) {
@@ -744,8 +785,9 @@
         <h3>${html(state.project.name)}</h3>
         <label class="field"><span>作者</span><input id="projectAuthor" value="${html(state.project.author)}" maxlength="80"></label>
         ${schedulingControl()}
-        ${!M.isText(state.project) ? `<label class="field"><span>开场动作</span><textarea id="preActions" spellcheck="false"
-          aria-label="开场动作">${html(state.project.preActions.join('\n'))}</textarea></label>` : ''}
+        ${!M.isText(state.project) ? `<label class="field"><span>${M.hasTeams(state.project) ? '本队开场 · 联合导出需一致' : '开场动作'}</span><textarea id="preActions" spellcheck="false"
+          aria-label="开场动作">${html(state.project.preActions.join('\n'))}</textarea></label>
+          ${M.hasTeams(state.project) ? `<button type="button" data-share-preactions>${icon('copy-check')}<span>沿用本队开场与公共配置</span></button>` : ''}` : ''}
       </div>`;
       return;
     }
@@ -754,7 +796,8 @@
     const canFollow = ['skill', 'burst'].includes(clip.abilityId);
     $('inspectorTitle').textContent = '片段属性';
     $('inspectorContent').innerHTML = `<div class="inspector-identity" style="${css(character)}">
-      ${avatarHtml(character)}<div><strong>${html(character.name)}</strong><small>${html(preset.name)}</small></div></div>
+      ${clip.useCurrentCharacter ? `<span class="generic-avatar">${icon('user-round')}</span>` : avatarHtml(character)}
+      <div><strong>${clip.useCurrentCharacter ? '当前前台角色' : html(character.name)}</strong><small>${html(preset.name)}</small></div></div>
       <section class="inspector-section"><h3>角色动作</h3>
         <label class="field"><span>动作</span><select data-property="abilityId" aria-label="技能">
           <optgroup label="技能">${character.skills.map(skill => `<option value="${skill.id}" ${skill.id === clip.abilityId ? 'selected' : ''}>
@@ -798,6 +841,7 @@
   function paint() {
     setSelection(state.selection, state.selected);
     paintMode();
+    teamEditor.paint();
     const active = document.activeElement;
     const focusProperty = active?.dataset.property;
     const focusOperation = active?.dataset.operationField;
@@ -851,12 +895,16 @@
     const fraction = Math.floor(state.playheadMs % 1000 / 100);
     $('timeReadout').textContent = `${String(Math.floor(totalSeconds / 60)).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}.${fraction}`;
     $('cycleReadout').textContent = `第 ${state.cycle} 轮`;
-    const readout = M.stateAt(state.project, state.playheadMs, state.hasLooped);
+    const conditional = !M.isText(state.project) && state.project.scheduling === 'original';
+    const readout = conditional
+      ? {timeMs: state.playheadMs, reference: true, foregroundId: null, occupiedClipId: null,
+        statuses: state.project.team.map(characterId => ({characterId, onfield: false, skills: []}))}
+      : M.stateAt(state.project, state.playheadMs, state.hasLooped);
     for (const status of readout.statuses) {
       const track = $('timelineCanvas').querySelector(`[data-track="${status.characterId}"]`);
       track?.classList.toggle('onfield', status.onfield);
       const counters = $('timelineCanvas').querySelector(`[data-states="${status.characterId}"]`);
-      if (counters) counters.innerHTML = status.skills.map(skill => `<span class="${skill.effectMs > 0 ? 'active-effect' : ''}">
+      if (counters) counters.innerHTML = conditional ? '<span>参考时长</span>' : status.skills.map(skill => `<span class="${skill.effectMs > 0 ? 'active-effect' : ''}">
         ${skill.abilityId === 'skill' ? 'E' : 'Q'} ${skill.cooldownMs > 0 ? `CD ${time(skill.cooldownMs)}s` : '就绪'}
         ${skill.effectMs > 0 ? ` · ${time(skill.effectMs)}s` : ''}</span>`).join('');
     }
@@ -1374,12 +1422,14 @@
   }
 
   function showIssues() {
-    const issues = M.validate(state.project);
+    const issues = M.validate(state.project, catalog);
     $('issuesList').innerHTML = issues.length ? issues.map(issue => `<button type="button" class="issue-item
-      ${issue.severity === 'warning' ? 'warning' : ''}" data-issue-clip="${html(issue.clipIds[0] || '')}">
+      ${issue.severity === 'warning' ? 'warning' : ''}" data-issue-clip="${html(issue.clipIds[0] || '')}"
+      ${issue.teamId ? `data-issue-team="${html(issue.teamId)}"` : ''}>
       ${icon(issue.severity === 'warning' ? 'info' : 'circle-alert')}<span>${html(issue.message)}</span></button>`).join('')
       : `<div class="issues-good">${icon('circle-check')} 排轴检查通过</div>`;
-    $('repairIssues').disabled = !issues.some(issue => issue.severity !== 'warning');
+    $('repairIssues').disabled = !issues.some(issue => issue.severity !== 'warning'
+      && ['overlap', 'switch', 'switch-loop', 'cooldown', 'cooldown-loop', 'cast-lock', 'range'].includes(issue.code));
     if (!$('issuesDialog').open) $('issuesDialog').showModal();
     icons();
   }
@@ -1599,6 +1649,13 @@
     }
     const roleToggle = event.target.closest('[data-role-toggle]');
     if (roleToggle) { openRoleSwitcher(roleToggle.dataset.roleToggle); return; }
+    const shared = event.target.closest('[data-shared-character]');
+    if (shared) { teamEditor.openRelations(shared.dataset.sharedCharacter); return; }
+    if (event.target.closest('[data-share-preactions]')) {
+      change(() => M.applySharedSettings(state.project));
+      toast('已沿用本队的开场动作与公共配置');
+      return;
+    }
     const quickAdd = event.target.closest('[data-quick-add]');
     const appendAction = event.target.closest('[data-append-action]');
     const quickCommon = event.target.closest('[data-quick-common]');
@@ -1682,7 +1739,12 @@
     else if (closePanel) closePanels();
     else if (issue) {
       $('issuesDialog').close();
+      if (issue.dataset.issueTeam && issue.dataset.issueTeam !== state.project.activeTeamId) {
+        change(() => M.switchTeam(state.project, issue.dataset.issueTeam));
+        teamChanged();
+      }
       if (issue.dataset.issueClip) selectClip(issue.dataset.issueClip, true);
+      else if (issue.dataset.issueTeam) teamEditor.open();
     }
   });
 
@@ -1923,7 +1985,7 @@
   }
   window.combatEditor = {apiVersion: 1, state, model: M, catalog, paint, loadObject, addCharacter, updateClip,
     selectClip, exportObject, exportArtifact, notify: toast, setDraftKey,
-    getProject() { return M.clone(state.project); },
+    getProject() { M.syncTeams(state.project); return M.clone(state.project); },
     setOwnedOnly(value) { state.ownedOnly = Boolean(value); paint(); },
     setRoster(record, ownedOnly = true) {
       state.roster = record ? M.clone(record) : null; state.ownedOnly = Boolean(ownedOnly);

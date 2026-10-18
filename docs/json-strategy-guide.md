@@ -1,6 +1,6 @@
 # JSON 战斗策略：从配置到实际选择
 
-这份说明对应 2026-10-18 校对的 BetterGI JSON 执行器快照，适用于编辑器 v0.3.0。说明依据 `AutoFightJsonTask`、`JsonCombatStrategyParser`、`ConditionEvaluator`、`ESkillCdTracker` 和技能检测实现整理，不依赖参考时间轴推测执行顺序。不同 BetterGI 版本可能有差异。
+这份说明对应 2026-10-18 校对的 BetterGI JSON 执行器快照，适用于编辑器 v0.4.0。说明依据 `AutoFightJsonTask`、`JsonCombatStrategyParser`、`ConditionEvaluator`、`ESkillCdTracker` 和技能检测实现整理，不依赖参考时间轴推测执行顺序。不同 BetterGI 版本可能有差异。
 
 ## 1. 先分清三种东西
 
@@ -13,6 +13,8 @@
 JSON 的“按步骤推进”和“按计划时刻”是编辑器生成依赖条件后的编排方式。它们最终仍交给同一个原生条件调度器。
 
 新建 JSON 默认“条件与优先级”。此时参考轴显示规划的动作占用、持续效果、冷却等；左右拖动不会改变运行优先级或同优先级的声明顺序。
+
+多支队伍可以合并到一个原生 JSON：每队分别指定完整四人、编辑独立条件与优先级，联合导出时加入阵容条件并隔离历史。共享角色不自动共享打法；同阵容的两个启用方案需要明确选择。条件模式播放仅推进参考位置，不显示推算的游戏 E/Q 就绪或前台状态。详见 [多队伍与共享角色](multi-team-workflows.md)。
 
 ## 2. 一个动作里有什么
 

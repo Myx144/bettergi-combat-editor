@@ -8,7 +8,7 @@
     ? require('./operations.js') : root.CombatOperations;
   const createFormats = typeof module === 'object' && module.exports
     ? require('./strategy-formats.js') : root.CombatFormatFactory;
-  let roleTools;
+  let roleTools, teamTools;
   const clone = value => JSON.parse(JSON.stringify(value));
   const seconds = value => Number((value / 1000).toFixed(3));
   const ms = value => Math.round(Number(value) * 1000);
@@ -118,6 +118,12 @@
   }
 
   function addClip(project, catalog, characterId, abilityId, startMs, ripple = true) {
+    const plan = teamTools?.hasTeams(project) ? teamTools.activeTeam(project) : null;
+    if (plan?.roster.length === 4 && !plan.roster.includes(String(characterId))
+      && !(project.roleSlots || []).some(slot => plan.roster.includes(slot.characterId)
+        && slot.candidates.some(candidate => candidate.characterId === String(characterId)))) {
+      throw new Error('角色不在本队阵容中，请先在队伍管理中调整阵容');
+    }
     if (!project.team.includes(String(characterId))) {
       if ((project.roleSlots || []).some(slot => slot.candidates.some(candidate =>
         candidate.characterId === String(characterId)))) throw new Error('该角色已属于兼容定位，请在角色轴旁切换');
@@ -270,6 +276,8 @@
     project.team = project.team.filter(id => id !== characterId);
     project.clips = project.clips.filter(clip => clip.characterId !== characterId);
     project.roleSlots = (project.roleSlots || []).filter(slot => slot.characterId !== characterId);
+    const plan = teamTools?.hasTeams(project) ? teamTools.activeTeam(project) : null;
+    if (plan) plan.roster = plan.roster.filter(id => id !== characterId);
   }
 
   function moveClips(project, clipIds, deltaMs) {
@@ -509,7 +517,10 @@
     return minimum;
   }
 
-  function validate(project, catalog = null) {
+  function validate(project, catalog = null, {teams = true} = {}) {
+    if (teams && teamTools?.hasTeams(project) && !isText(project)) {
+      return teamTools.validateTeams(project, catalog);
+    }
     const issues = [];
     const rows = ordered(project);
     const issue = (code, message, clips = []) => issues.push({code, message, clipIds: clips.map(c => c.id)});
@@ -518,7 +529,9 @@
     const names = new Set();
     for (const clip of rows) {
       if (!project.team.includes(clip.characterId)) issue('team', '片段所属角色不在队伍中', [clip]);
-      if (!isText(project) && (!/^[\p{L}][\p{L}\p{N}-]*$/u.test(clip.name) || /^(true|false)$/i.test(clip.name)
+      const emptyNativeName = project.scheduling === 'original' && clip.name === ''
+        && read(clip.sourceAction, 'Name', null) === '';
+      if (!isText(project) && !emptyNativeName && (!/^[\p{L}][\p{L}\p{N}-]*$/u.test(clip.name) || /^(true|false)$/i.test(clip.name)
         || ['t', 'count', 'since', 'min', 'max', 'e-ready', 'q-ready', 'onfield', 'e-cd', 'low-hp',
           'last-exec', 'battle-time', 'in-party', 'last-check'].includes(clip.name.toLowerCase()))) {
         issue('name', '片段名称需以文字开头，只能包含文字、数字或连字符', [clip]);
@@ -633,7 +646,8 @@
         }
       }
     }
-    return [...issues, ...(roleTools?.validateRoles(project, catalog) || [])];
+    return [...issues, ...(roleTools?.validateRoles(project, catalog) || []),
+      ...(teams ? teamTools?.validateTeams(project, catalog) || [] : [])];
   }
 
   function fitLoop(project) {
@@ -866,9 +880,13 @@
   }
 
   function exportStrategy(project, catalog, {embedProject = true,
-    compilerVersion = roleTools.hasCompatibility(project) ? 4 : 3, check = true} = {}) {
+    compilerVersion = null, check = true, teamScope = true} = {}) {
     if (isText(project)) throw new Error('当前为 TXT 模式，请导出 TXT 战斗策略');
-    const issues = validate(project, catalog).filter(issue => issue.severity !== 'warning');
+    if (teamScope && teamTools?.hasTeams(project)) {
+      return teamTools.exportTeams(project, catalog, {embedProject, check});
+    }
+    compilerVersion ??= roleTools.hasCompatibility(project) ? 4 : 3;
+    const issues = validate(project, catalog, {teams: false}).filter(issue => issue.severity !== 'warning');
     if (check && issues.length) throw new Error(issues[0].message);
     const rows = project.scheduling === 'original' ? declared(project) : ordered(project);
     const strategy = clone(project.sourceRoot || {});
@@ -978,7 +996,7 @@
     return commands;
   }
 
-  function normalizeProject(value, catalog, {separateActions = true} = {}) {
+  function normalizeProject(value, catalog, {separateActions = true, allowActorPool = false} = {}) {
     if (value.format !== 'betterbgi-combat-timeline' || value.version !== 1
       || !Array.isArray(value.team) || !Array.isArray(value.clips)) throw new Error('不是支持的时间轴工程');
     const project = {...emptyProject(), ...clone(value)};
@@ -987,7 +1005,8 @@
     project.execution = isText(project) ? 'process' : value.execution ?? 'timeline';
     if (!['process', 'timeline'].includes(project.execution)) throw new Error('工程调度方式无效');
     project.team = project.team.map(String);
-    if ((!isText(project) && project.scheduling !== 'original' && project.team.length > 4)
+    if ((!isText(project) && project.scheduling !== 'original' && project.team.length > 4
+      && !allowActorPool && !teamTools?.hasTeams(value))
       || new Set(project.team).size !== project.team.length) throw new Error('队伍配置无效');
     for (const id of project.team) character(catalog, id);
     const ids = new Set();
@@ -1034,7 +1053,8 @@
     project.nextId = Math.max(project.nextId || 1, project.clips.length + 1,
       ...project.clips.map(clip => (Number(clip.id.replace(/^clip/, '')) || 0) + 1));
     roleTools.normalizeRoles(project, catalog);
-    return separateActions ? separateFollowAttacks(project, catalog) : project;
+    if (separateActions) separateFollowAttacks(project, catalog);
+    return teamTools?.normalizeTeams(project, catalog) || project;
   }
 
   function importStrategy(value, catalog, {strategyFormat = 'json'} = {}) {
@@ -1061,6 +1081,15 @@
           for (const key of Object.keys(saved.sourceInfo)) if (/^config$/i.test(key)) delete saved.sourceInfo[key];
           saved.sourceInfo.Config = incomingConfig;
         }
+        if (teamTools?.hasTeams(saved)) {
+          for (const plan of saved.teamPlans) {
+            if (plan.id === saved.activeTeamId) continue;
+            plan.project.preActions = clone(saved.preActions);
+            plan.project.sourceRoot = clone(saved.sourceRoot);
+            plan.project.sourceInfo = clone(saved.sourceInfo);
+          }
+          teamTools.syncTeams(saved);
+        }
         return separateFollowAttacks(saved, catalog);
       }
     }
@@ -1083,7 +1112,7 @@
       catalog.characters.some(avatar => avatar.name === name || avatar.aliases.includes(name)));
     let cursor = 0, currentCharacter = firstCharacter || null;
     for (const action of [...actions].sort((a, b) => read(a, 'Index', 0) - read(b, 'Index', 0))) {
-      const rawName = read(action, 'Character', '') || currentCharacter;
+      const rawName = read(action, 'Character', '') || currentCharacter || catalog.characters[0]?.name;
       const avatar = catalog.characters.find(item => item.name === rawName || item.aliases.includes(rawName));
       if (!avatar) throw new Error(`无法识别角色“${rawName || '当前角色'}”，请先在原 JSON 指定角色`);
       const text = read(action, 'Action', '');
@@ -1098,7 +1127,7 @@
         && commands.slice(1).every(command => ['wait', 'after', 'ready', 'attack'].includes(command.method));
       const mode = simple ? modes[first?.method] || 'combo' : 'combo';
       const clip = addClip(project, catalog, avatar.id, mode, cursor, true);
-      clip.name = read(action, 'Name', '') || clip.name;
+      clip.name = read(action, 'Name', clip.name);
       clip.condition = read(read(action, 'Condition', {}), 'Expression', '');
       clip.sourceAction = clone(action);
       clip.priority = read(action, 'Index', 0);
@@ -1106,13 +1135,18 @@
       clip.commandOverride = text;
       if (mode === 'combo') clip.operations = operations.fromCommands(commands) || [];
       clip.useCurrentCharacter = !read(action, 'Character', '');
+      if (clip.useCurrentCharacter) {
+        clip.effectMs = 0;
+        clip.cooldownMs = 0;
+        clip.effectPolicy = 'none';
+      }
       clip.readiness = 'none';
       clip.ensureCast = false;
       if (mode === 'walk') clip.operation.direction = first.method === 'walk' ? first.args[0] : first.method;
       if (mode === 'keypress') clip.operation.keys = first.args[0];
       if (mode === 'moveby') Object.assign(clip.operation, {x: Number(first.args[0]), y: Number(first.args[1])});
       clip.hold = commands.some(command => ['skill', 'e'].includes(command.method) && command.args.includes('hold'));
-      clip.castTiming = timingFor(clip.characterId, clip.abilityId, clip.hold);
+      clip.castTiming = clip.useCurrentCharacter ? null : timingFor(clip.characterId, clip.abilityId, clip.hold);
       clip.ensureCast = read(action, 'EnsureCast', false);
       const timed = commands.reduce((sum, command) => {
         const parameter = command.method === 'walk' ? command.args[1] : command.args[0];
@@ -1173,6 +1207,29 @@
   roleTools = createRoles(api);
   Object.assign(api, roleTools);
   Object.assign(api, createFormats(api));
+  const createTeams = typeof module === 'object' && module.exports ? require('./teams.js') : root.CombatTeamFactory;
+  const conditions = typeof module === 'object' && module.exports ? require('./conditions.js') : root.CombatConditions;
+  teamTools = createTeams(api, conditions);
+  Object.assign(api, teamTools);
+  const setFormat = api.setStrategyFormat;
+  api.setStrategyFormat = (project, format) => {
+    if (!teamTools.hasTeams(project)) return setFormat(project, format);
+    teamTools.syncTeams(project);
+    setFormat(project, format);
+    for (const plan of project.teamPlans) {
+      if (plan.id !== project.activeTeamId) setFormat(plan.project, format);
+    }
+    teamTools.syncTeams(project);
+    return project;
+  };
+  const switchRole = api.switchRoleCharacter;
+  api.switchRoleCharacter = (project, catalog, characterId, candidateId) => {
+    const before = api.roleSlot(project, characterId).characterId;
+    const result = switchRole(project, catalog, characterId, candidateId);
+    const plan = teamTools.hasTeams(project) ? teamTools.activeTeam(project) : null;
+    if (plan) plan.roster = plan.roster.map(id => id === before ? candidateId : id);
+    return result;
+  };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.CombatTimeline = api;
 })(globalThis);

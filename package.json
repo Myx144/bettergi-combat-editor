@@ -1,6 +1,6 @@
 {
   "name": "bettergi-combat-editor",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A visual timeline and conditional strategy editor for BetterGI TXT and JSON combat scripts.",
   "author": "Myx144",
   "license": "MIT",
@@ -42,6 +42,9 @@
       "conditions.js",
       "rule-editor.js",
       "roles.js",
+      "teams.js",
+      "team-editor.js",
+      "teams.css",
       "catalog.js",
       "cast-timings.js",
       "vendor/**",
