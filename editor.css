@@ -174,6 +174,15 @@ h2 { margin: 0; font-size: 12px; font-weight: 650; }
 .role-branch-list::before { content: ""; position: absolute; left: -17px; top: 39px; bottom: 39px; border-left: 1px solid #b9c9d9; }
 .role-branch-item { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 22px; gap: 4px; min-height: 78px; }
 .role-branch-item::before { content: ""; position: absolute; left: -17px; top: 39px; width: 17px; border-top: 1px solid #b9c9d9; }
+.native-role-tree { padding-top: 10px; }
+.native-branch-item { grid-template-columns: minmax(0, 1fr); }
+.native-track .track-index { line-height: 12px; }
+.generic-track-avatar { width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; color: #75869b; }
+.generic-track-avatar .lucide { width: 22px; height: 22px; }
+.native-common-track .track-label { cursor: default; }
+.native-common-track .track-heading { align-items: flex-start; }
+.onfield-run.conditional-run { background: transparent; box-shadow: none; }
+.sequence-item .generic-avatar { width: 22px; height: 22px; color: #75869b; }
 .role-branch { min-width: 0; display: flex; gap: 7px; padding: 8px; text-align: left; border-radius: 6px; border-color: #dce2e9; }
 .role-branch.selected { border-color: var(--character-color); background: var(--effect-color); }
 .role-branch > img, .role-branch > .avatar-fallback { width: 31px; height: 31px; flex: 0 0 auto; border-radius: 50%; background: #edf0f5; object-fit: contain; }

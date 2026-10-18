@@ -273,8 +273,18 @@
   }
 
   function removeCharacter(project, characterId) {
-    project.team = project.team.filter(id => id !== characterId);
-    project.clips = project.clips.filter(clip => clip.characterId !== characterId);
+    const native = !isText(project) && project.scheduling === 'original';
+    const remaining = project.team.filter(id => id !== characterId);
+    project.clips = project.clips.filter(clip => clip.characterId !== characterId || native && clip.useCurrentCharacter);
+    const common = native ? project.clips.filter(clip => clip.characterId === characterId && clip.useCurrentCharacter) : [];
+    if (common.length) {
+      // Character-empty actions still need a hidden editor owner for ability lookups.
+      const placeholder = remaining.find(id => project.clips.some(clip => clip.characterId === id && !clip.useCurrentCharacter))
+        || characterId;
+      for (const clip of common) clip.characterId = placeholder;
+      if (!remaining.includes(placeholder)) remaining.push(placeholder);
+    }
+    project.team = remaining;
     project.roleSlots = (project.roleSlots || []).filter(slot => slot.characterId !== characterId);
     const plan = teamTools?.hasTeams(project) ? teamTools.activeTeam(project) : null;
     if (plan) plan.roster = plan.roster.filter(id => id !== characterId);

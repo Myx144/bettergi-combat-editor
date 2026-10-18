@@ -17,6 +17,39 @@
       .map(key => [key, M.clone(clip[key])]));
     const hasCompatibility = project => (project.roleSlots || []).some(slot => slot.candidates.length > 1);
 
+    function nativeTrackGroups(project) {
+      if (M.isText(project) || project.scheduling !== 'original') return [];
+      // Native priorities organize the view; they never create mutually exclusive runtime roles.
+      const rows = M.declared(project), common = rows.filter(clip => clip.useCurrentCharacter);
+      const owners = project.team.filter(id => rows.some(clip => clip.characterId === id && !clip.useCurrentCharacter));
+      const roster = M.hasTeams(project) ? M.activeTeam(project).roster : [];
+      const silent = project.team.filter(id => !owners.includes(id)
+        && (!rows.some(clip => clip.characterId === id) || roster.includes(id)));
+      const labels = new Map(), groups = new Map();
+      for (const clip of common) {
+        if (!M.commandsFor(clip).trim() && clip.condition.trim().toLowerCase() === 'false' && clip.name) {
+          const priority = M.priorityOf(clip);
+          if (!labels.has(priority)) labels.set(priority, clip.name);
+        }
+      }
+      for (const id of owners) {
+        const clips = rows.filter(clip => clip.characterId === id && !clip.useCurrentCharacter);
+        const priority = Math.min(...clips.map(M.priorityOf));
+        const key = owners.length > 4 ? `native-priority-${priority}` : `native-character-${id}`;
+        if (!groups.has(key)) groups.set(key, {id: key, name: labels.get(priority) || `优先级 P${priority}`,
+          priority, characterIds: [], clipIds: []});
+        groups.get(key).characterIds.push(id);
+        groups.get(key).clipIds.push(...clips.map(clip => clip.id));
+      }
+      return [
+        ...(common.length ? [{id: 'native-common', name: '通用动作 / 状态',
+          priority: null, characterIds: [], clipIds: common.map(clip => clip.id)}] : []),
+        ...[...groups.values()].sort((a, b) => a.priority - b.priority),
+        ...silent.map(id => ({id: `native-character-${id}`, name: '队伍成员',
+          priority: null, characterIds: [id], clipIds: []}))
+      ];
+    }
+
     function roleSlot(project, characterId) {
       const id = String(characterId);
       return (project.roleSlots || []).find(slot => slot.id === id || slot.characterId === id)
@@ -321,7 +354,7 @@
       return result;
     }
 
-    return {roleDefinitions, roleSlot, configureRole, addRoleCandidate, removeRoleCandidate,
+    return {roleDefinitions, roleSlot, nativeTrackGroups, configureRole, addRoleCandidate, removeRoleCandidate,
       moveRoleCandidate, roleClip, switchRoleCharacter, hasCompatibility, normalizeRoles,
       validateRoles, compatibleActions};
   }

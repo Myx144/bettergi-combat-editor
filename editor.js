@@ -16,7 +16,7 @@
     search: '', element: '', zoom: 48, snap: true, step: 100, ripple: true, playing: false,
     playheadMs: 0, cycle: 1, speed: 1, hasLooped: false, undo: [], redo: [], drag: null,
     draggingCharacter: null, quickAdd: null, toastTimer: null, lastFrame: null,
-    roster: null, ownedOnly: false, roleSwitcher: null};
+    roster: null, ownedOnly: false, roleSwitcher: null, nativeTrackChoices: {}, nativeExpandedGroups: []};
   const mobileLayout = matchMedia('(max-width: 710px)');
   const mobileControls = [
     ['projectHeading', 'mobileProjectSlot'], ['strategyModeControl', 'mobileFormatSlot'], ['executionMode', 'mobileModeSlot'],
@@ -66,6 +66,10 @@
   function selectedClip() { return state.project.clips.find(clip => clip.id === state.selected); }
   function selectedClips() { return M.ordered(state.project).filter(clip => state.selection.includes(clip.id)); }
   function isSelected(id) { return state.selection.includes(id); }
+  function candidateIds() {
+    return !M.isText(state.project) && state.project.scheduling === 'original'
+      ? M.nativeTrackGroups(state.project).flatMap(group => group.characterIds) : state.project.team;
+  }
   function setSelection(ids, primary = ids.at(-1)) {
     const valid = new Set(state.project.clips.map(clip => clip.id));
     state.selection = [...new Set(ids)].filter(id => valid.has(id));
@@ -74,6 +78,8 @@
   function selectedAbility(clip) {
     const skill = M.ability(catalog, clip.characterId, clip.abilityId);
     if (clip.useCurrentCharacter) {
+      if (clip.commandOverride === '') return {...skill, name: clip.name || '状态标记',
+        key: '标记', icon: null, iconName: 'flag'};
       const names = {skill: '元素战技', burst: '元素爆发', attack: '普攻', charge: '重击'};
       if (names[clip.abilityId]) return {...skill, name: names[clip.abilityId], icon: null,
         iconName: clip.abilityId === 'skill' ? 'zap' : clip.abilityId === 'burst' ? 'sparkles' : 'swords'};
@@ -163,6 +169,8 @@
     pause();
     closeQuickAdd();
     closeRoleSwitcher();
+    state.nativeTrackChoices = {};
+    state.nativeExpandedGroups = [];
     state.drag = null;
     const first = state.project.clips.find(clip => !characterId || clip.characterId === characterId);
     setSelection(first ? [first.id] : []);
@@ -180,6 +188,7 @@
 
   function paintLibrary() {
     const query = state.search.trim().toLocaleLowerCase();
+    const candidates = candidateIds();
     const owned = new Map((state.roster?.characters || []).map(character => [String(character.id), character]));
     const list = catalog.characters.filter(character => (!state.element || state.element === character.element)
       && (!state.ownedOnly || !state.roster || owned.has(character.id))
@@ -196,7 +205,7 @@
     }
     $('characterList').innerHTML = list.map(character => `
       <article class="character-tile ${state.libraryFocus === character.id ? 'selected' : ''}
-        ${state.project.team.includes(character.id) ? 'in-team' : ''}" draggable="true"
+        ${candidates.includes(character.id) ? 'in-team' : ''}" draggable="true"
         data-character="${character.id}" role="listitem" style="${css(character)}">
         <button class="character-select" type="button" data-select-character="${character.id}"
           title="${html(character.name)}" aria-label="选择${html(character.name)}">
@@ -216,11 +225,96 @@
   }
 
   function closeRoleSwitcher(focus = false) {
-    const id = state.roleSwitcher?.characterId;
+    const open = state.roleSwitcher, id = open?.characterId;
     state.roleSwitcher = null;
     $('roleSwitcher').hidden = true;
-    for (const button of document.querySelectorAll('[data-role-toggle]')) button.setAttribute('aria-expanded', 'false');
-    if (focus && id) document.querySelector(`[data-role-toggle="${id}"]`)?.focus({preventScroll: true});
+    for (const button of document.querySelectorAll('[data-role-toggle], [data-native-group-toggle]')) {
+      button.setAttribute('aria-expanded', 'false');
+    }
+    if (focus && open?.groupId) document.querySelector(
+      `[data-native-group-toggle="${open.groupId}"][data-native-character="${id}"]`)?.focus({preventScroll: true});
+    else if (focus && id) document.querySelector(`[data-role-toggle="${id}"]`)?.focus({preventScroll: true});
+  }
+
+  function nativeTrackRows() {
+    const groups = M.nativeTrackGroups(state.project);
+    if (!groups.length) return state.project.team.map(id => ({id, characterId: id, group: null}));
+    const roster = M.hasTeams(state.project) ? M.activeTeam(state.project).roster : [];
+    return groups.flatMap(group => {
+      if (!group.characterIds.length) return [{id: group.id, characterId: null, group}];
+      const chosen = state.nativeTrackChoices[group.id];
+      const present = group.characterIds.filter(id => roster.includes(id));
+      const members = state.nativeExpandedGroups.includes(group.id) ? group.characterIds
+        : group.characterIds.includes(chosen) ? [chosen] : present.length ? present : [group.characterIds[0]];
+      return members.map(id => ({id, characterId: id, group}));
+    });
+  }
+
+  function revealNativeClip(clip) {
+    if (!clip || clip.useCurrentCharacter) return;
+    const group = M.nativeTrackGroups(state.project).find(item => item.characterIds.includes(clip.characterId));
+    if (group) state.nativeTrackChoices[group.id] = clip.characterId;
+  }
+
+  function positionRoleSwitcher(selector) {
+    const panel = $('roleSwitcher');
+    if (!isMobile) {
+      const anchor = document.querySelector(selector)?.getBoundingClientRect();
+      if (!anchor) { closeRoleSwitcher(); return; }
+      panel.style.left = `${Math.max(10, Math.min(anchor.right + 9, innerWidth - panel.offsetWidth - 10))}px`;
+      panel.style.top = `${Math.max(10, Math.min(anchor.top - 50, innerHeight - panel.offsetHeight - 10))}px`;
+    } else {
+      panel.style.left = '';
+      panel.style.top = '';
+    }
+  }
+
+  function openNativeGroup(groupId, characterId) {
+    if (state.roleSwitcher?.groupId === groupId && state.roleSwitcher.characterId === characterId) {
+      closeRoleSwitcher(true); return;
+    }
+    pause();
+    closePanels();
+    closeQuickAdd();
+    state.roleSwitcher = {groupId, characterId};
+    paintRoleSwitcher();
+    document.querySelector(`[data-native-group-toggle="${groupId}"][data-native-character="${characterId}"]`)
+      ?.setAttribute('aria-expanded', 'true');
+    $('roleSwitcher').querySelector('[aria-pressed="true"]')?.focus({preventScroll: true});
+  }
+
+  function paintNativeGroupSwitcher(open) {
+    const group = M.nativeTrackGroups(state.project).find(item => item.id === open.groupId);
+    if (!group) { closeRoleSwitcher(); return; }
+    const expanded = state.nativeExpandedGroups.includes(group.id), panel = $('roleSwitcher');
+    panel.setAttribute('aria-label', '候选角色显示分组');
+    panel.innerHTML = `<header class="role-switcher-heading"><strong>${html(group.name)}</strong>
+      <span class="muted">${group.characterIds.length} 名角色</span>
+      <button class="icon-button" type="button" data-role-close aria-label="收起候选角色" title="收起">${icon('x')}</button></header>
+      <div class="role-tree native-role-tree"><span class="role-tree-root" aria-hidden="true">${icon('git-fork')}</span>
+        <div class="role-branch-list">${group.characterIds.map(id => {
+          const character = M.character(catalog, id);
+          const clips = M.declared(state.project).filter(clip => clip.characterId === id && !clip.useCurrentCharacter);
+          const total = clips.reduce((sum, clip) => sum + M.actionDurationMs(clip), 0);
+          return `<div class="role-branch-item native-branch-item" style="${css(character)}">
+            <button type="button" class="role-branch ${id === open.characterId ? 'selected' : ''}"
+              data-native-select="${id}" aria-pressed="${id === open.characterId}"
+              title="查看${html(character.name)}的动作">
+              ${avatarHtml(character)}<span class="role-branch-content"><span class="role-branch-name">
+                <strong>${html(character.name)}</strong><small>${clips.length} 个动作</small></span>
+                <span class="role-mini-axis" aria-hidden="true">${clips.map(clip =>
+                  `<i style="flex-grow:${M.actionDurationMs(clip) / Math.max(1, total)}"
+                    title="${html(clip.name)}">${html(selectedAbility(clip).key)}</i>`).join('')}</span>
+                <small>${clips.length ? `P${Math.min(...clips.map(M.priorityOf))}–P${Math.max(...clips.map(M.priorityOf))}` : '尚无动作'}</small></span>
+              ${id === open.characterId ? icon('check') : icon('chevron-right')}
+            </button></div>`;
+        }).join('')}</div></div>
+      ${group.characterIds.length > 1 ? `<footer class="role-switcher-actions"><button type="button"
+        data-native-expand="${group.id}" aria-expanded="${expanded}">
+        ${icon(expanded ? 'chevrons-up' : 'chevrons-down')}<span>${expanded ? '收起为单角色' : '展开全部角色'}</span></button></footer>` : ''}`;
+    panel.hidden = false;
+    icons();
+    positionRoleSwitcher(`[data-native-group-toggle="${group.id}"][data-native-character="${open.characterId}"]`);
   }
 
   function openRoleSwitcher(characterId) {
@@ -258,9 +352,11 @@
   function paintRoleSwitcher() {
     const open = state.roleSwitcher;
     if (!open) return;
+    if (open.groupId) { paintNativeGroupSwitcher(open); return; }
     if (!state.project.team.includes(open.characterId)) { closeRoleSwitcher(); return; }
     const slot = M.roleSlot(state.project, open.characterId);
     const panel = $('roleSwitcher');
+    panel.setAttribute('aria-label', '角色定位与兼容分支');
     const rows = M.ordered(state.project).filter(clip => clip.characterId === slot.characterId);
     panel.innerHTML = `<header class="role-switcher-heading"><strong>角色分支</strong>
       <span class="muted">${slot.candidates.length} 个</span>
@@ -305,15 +401,7 @@
     panel.hidden = false;
     if (open.adding) paintRoleCandidates();
     icons();
-    if (!isMobile) {
-      const anchor = document.querySelector(`[data-role-toggle="${open.characterId}"]`)?.getBoundingClientRect();
-      if (!anchor) { closeRoleSwitcher(); return; }
-      panel.style.left = `${Math.max(10, Math.min(anchor.right + 9, innerWidth - panel.offsetWidth - 10))}px`;
-      panel.style.top = `${Math.max(10, Math.min(anchor.top - 50, innerHeight - panel.offsetHeight - 10))}px`;
-    } else {
-      panel.style.left = '';
-      panel.style.top = '';
-    }
+    positionRoleSwitcher(`[data-role-toggle="${open.characterId}"]`);
   }
 
   function paintTimeline() {
@@ -357,11 +445,15 @@
       return [];
     });
     const nextLink = new Map(links.map(link => [link.from.id, link]));
-    const tracks = project.team.map((id, index) => {
-      const character = M.character(catalog, id);
-      const role = M.roleSlot(project, id);
+    const trackRows = nativeTrackRows();
+    const tracks = trackRows.map(({id, characterId, group}, index) => {
+      const common = group && characterId === null;
+      const character = common ? {name: group.name, color: '#7e8c9e'} : M.character(catalog, characterId);
+      const role = common ? {role: 'flex', candidates: []} : M.roleSlot(project, characterId);
       const roleName = M.roleDefinitions.find(item => item.id === role.role).name;
-      const clips = rows.filter(clip => clip.characterId === id);
+      const clips = rows.filter(clip => group
+        ? common ? clip.useCurrentCharacter : clip.characterId === characterId && !clip.useCurrentCharacter
+        : clip.characterId === characterId);
       const renderClip = (clip, run) => {
         const skill = selectedAbility(clip);
         const castMs = Math.min(M.castDurationMs(clip), M.endOf(clip) - clip.startMs);
@@ -374,7 +466,7 @@
         const entrance = run.clips[0].id === clip.id;
         const pending = ['skill', 'burst'].includes(clip.abilityId) && lock === null;
         const canTrim = !M.isFixedAction(clip);
-        const title = `${clip.useCurrentCharacter ? '当前前台角色' : character.name} · ${skill.name}\n${time(clip.startMs)}–${time(M.endOf(clip))}s` +
+          const title = `${clip.useCurrentCharacter ? '通用动作 / 状态' : character.name} · ${conditional ? clip.name || skill.name : skill.name}\n${time(clip.startMs)}–${time(M.endOf(clip))}s` +
           (lock !== null ? `\n释放换人锁定 ${M.seconds(lock)}s` : ['skill', 'burst'].includes(clip.abilityId) ? '\n释放锁定待实测' : '');
         const effectSize = Math.max(0, M.effectEnd(project, clip) - clip.startMs) / 1000 * state.zoom;
         const effectTop = actionHeight + (clip.abilityId === 'burst' ? 32 : 8);
@@ -389,7 +481,7 @@
             style="width:${castSize}px" title="${pending ? '释放时长待实测' : `动作时长 ${M.seconds(castMs)} 秒`}">
             ${entrance ? clip.useCurrentCharacter ? `<span class="generic-avatar">${icon('user-round')}</span>`
               : avatarHtml(character, 'clip-avatar') : ''}${skillImage(skill, 'clip-skill-icon')}
-            <span class="clip-title"><strong>${html(skill.name)}</strong><small>${skill.key}
+            <span class="clip-title"><strong>${html(conditional ? clip.name || skill.name : skill.name)}</strong><small>${skill.key}
               · ${pending ? '待实测' : `${time(castMs)}s`}</small></span>
             <span class="clip-key" aria-hidden="true">${skill.key}</span>
           </div>
@@ -408,7 +500,10 @@
           style="left:${left}px;top:${cooldownTop}px;width:${clip.cooldownMs / 1000 * state.zoom}px"
           title="${skill.key} 冷却 ${time(clip.cooldownMs)}s"></div>` : ''}`;
       };
-      const body = runs.filter(run => run.characterId === id).map(run => {
+      const body = conditional ? clips.map(clip => `<div class="onfield-run conditional-run"
+        style="left:${clip.startMs / 1000 * state.zoom}px;width:${M.actionDurationMs(clip) / 1000 * state.zoom}px">
+        ${renderClip(clip, {startMs: clip.startMs, clips: [clip]})}</div>`).join('')
+        : runs.filter(run => run.characterId === id).map(run => {
         const tail = run.clips.at(-1), link = tail && nextLink.get(tail.id);
         const direction = link && project.team.indexOf(link.to.characterId) > index ? 'arrow-down-right'
           : link && project.team.indexOf(link.to.characterId) < index ? 'arrow-up-right' : 'arrow-right';
@@ -430,31 +525,39 @@
             : `<div class="loop-target run-return-target">${avatarHtml(character)}<span>回切</span></div>`}
         </div>`;
       }).join('');
-      return `<section class="track ${clips.some(clip => isSelected(clip.id)) ? 'selected-track' : ''}"
-        data-track="${id}" style="${css(character)}">
-        <div class="track-label sticky-label" draggable="true" data-team-drag="${id}">
-          <div class="track-heading"><button class="track-add-source" draggable="true" data-track-avatar="${id}"
-            type="button" title="拖入${html(character.name)}的技能" aria-label="拖入${html(character.name)}的技能">${avatarHtml(character, 'track-avatar')}</button>
+      return `<section class="track ${group ? 'native-track' : ''} ${common ? 'native-common-track' : ''} ${clips.some(clip => isSelected(clip.id)) ? 'selected-track' : ''}"
+        data-track="${id}" ${group ? `data-native-track-group="${group.id}"` : ''} style="${css(character)}">
+        <div class="track-label sticky-label" ${common ? '' : `draggable="true" data-team-drag="${id}"`}>
+          <div class="track-heading">${common ? `<span class="generic-track-avatar">${icon('workflow')}</span>`
+            : `<button class="track-add-source" draggable="true" data-track-avatar="${id}"
+              type="button" title="拖入${html(character.name)}的技能" aria-label="拖入${html(character.name)}的技能">${avatarHtml(character, 'track-avatar')}</button>`}
             <div class="track-name">${html(character.name)}<span class="track-index">${
-              plan && !plan.roster.includes(id) ? '阵容外动作' : role.candidates.length > 1 || role.role !== 'flex'
+              group ? common ? `${clips.length} 个动作` : `${html(group.name)} · ${group.characterIds.length} 名角色${plan && !plan.roster.includes(id) ? ' · 阵容外动作' : ''}`
+              : plan && !plan.roster.includes(id) ? '阵容外动作' : role.candidates.length > 1 || role.role !== 'flex'
                 ? html(roleName) : `角色 ${index + 1}`}</span></div>
-            ${relations.has(id) ? `<button type="button" class="icon-button track-shared" data-shared-character="${id}"
+            ${!common && relations.has(id) ? `<button type="button" class="icon-button track-shared" data-shared-character="${id}"
               title="${html(character.name)}关联 ${relations.get(id).length} 支队伍" aria-label="查看${html(character.name)}的队伍关联">
               ${icon('link-2')}<span>${relations.get(id).length}</span></button>` : ''}</div>
-          <div class="track-states" data-states="${id}"></div>
-          <button class="icon-button track-role-toggle ${role.candidates.length > 1 ? 'has-branches' : ''}"
+          <div class="track-states" data-states="${id}">${conditional ? '<span>参考时长</span>' : ''}</div>
+          ${group && !common ? `<button class="icon-button track-role-toggle ${group.characterIds.length > 1 ? 'has-branches' : ''}"
+            data-native-group-toggle="${group.id}" data-native-character="${characterId}" type="button"
+            aria-expanded="${state.roleSwitcher?.groupId === group.id && state.roleSwitcher.characterId === characterId}"
+            aria-controls="roleSwitcher" title="查看${html(group.name)}的候选角色"
+            aria-label="展开${html(group.name)}的${group.characterIds.length}名候选角色">${icon('git-fork')}
+            ${group.characterIds.length > 1 ? `<span>${group.characterIds.length}</span>` : ''}</button>`
+            : common ? '' : `<button class="icon-button track-role-toggle ${role.candidates.length > 1 ? 'has-branches' : ''}"
             data-role-toggle="${id}" type="button" aria-expanded="${state.roleSwitcher?.characterId === id}"
             aria-controls="roleSwitcher" title="${html(character.name)} · 角色定位与兼容分支"
             aria-label="展开${html(character.name)}的兼容分支">${icon('git-fork')}
-            ${role.candidates.length > 1 ? `<span>${role.candidates.length}</span>` : ''}</button>
-          <button class="icon-button track-add" data-quick-add="${id}" type="button"
+            ${role.candidates.length > 1 ? `<span>${role.candidates.length}</span>` : ''}</button>`}
+          ${common ? '' : `<button class="icon-button track-add" data-quick-add="${id}" type="button"
             title="快速添加${html(character.name)}的技能" aria-label="快速添加${html(character.name)}的技能">${icon('plus')}</button>
-          <button class="icon-button track-remove" data-remove-character="${id}" type="button"
-            title="移除${html(character.name)}" aria-label="移除${html(character.name)}">${icon('x')}</button>
+            <button class="icon-button track-remove" data-remove-character="${id}" type="button"
+              title="移除${html(character.name)}" aria-label="移除${html(character.name)}">${icon('x')}</button>`}
         </div><div class="track-body">${grid}${body}</div>
       </section>`;
     }).join('');
-    const height = 65 + project.team.length * rowHeight;
+    const height = 65 + trackRows.length * rowHeight;
     const connections = `<svg class="switch-connections" width="${width}" height="${height}" aria-hidden="true">
       <defs><marker id="switchArrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5"
         orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#758399"></path></marker></defs>
@@ -484,9 +587,10 @@
       const character = M.character(catalog, clip.characterId), skill = selectedAbility(clip);
       return `${index && !conditional ? icon('chevron-right').replace('data-lucide', 'class="sequence-arrow" data-lucide') : ''}
         <button type="button" class="sequence-item ${isSelected(clip.id) ? 'selected' : ''}" data-sequence="${clip.id}"
-          style="${css(character)}" title="${html(character.name)} · ${html(skill.name)}">
-          ${index === 0 || overviewRows[index - 1].characterId !== clip.characterId ? avatarHtml(character) : ''}
-          <span><strong>${['attack', 'wait'].includes(clip.abilityId) ? html(skill.name) : html(skill.key)}</strong>
+          style="${css(character)}" title="${html(clip.useCurrentCharacter ? '通用动作 / 状态' : character.name)} · ${html(clip.name || skill.name)}">
+          ${clip.useCurrentCharacter ? `<span class="generic-avatar">${icon('user-round')}</span>`
+            : index === 0 || overviewRows[index - 1].characterId !== clip.characterId ? avatarHtml(character) : ''}
+          <span><strong>${conditional ? html(clip.name || skill.name) : ['attack', 'wait'].includes(clip.abilityId) ? html(skill.name) : html(skill.key)}</strong>
             <small>${conditional ? `P${M.priorityOf(clip)}` : `${time(clip.startMs)}s`}</small></span></button>`;
     }).join('');
     paintSelection();
@@ -517,13 +621,13 @@
       item.classList.toggle('selected', isSelected(item.dataset.sequence));
     }
     for (const track of $('timelineCanvas').querySelectorAll('[data-track]')) {
-      track.classList.toggle('selected-track', state.project.clips.some(clip =>
-        clip.characterId === track.dataset.track && isSelected(clip.id)));
+      track.classList.toggle('selected-track', [...track.querySelectorAll('[data-clip]')]
+        .some(clip => isSelected(clip.dataset.clip)));
     }
     for (const link of $('timelineCanvas').querySelectorAll('[data-link-from]')) {
       link.classList.toggle('selected', isSelected(link.dataset.linkFrom));
     }
-    $('projectStats').textContent = `${state.project.team.length}${
+    $('projectStats').textContent = `${candidateIds().length}${
       M.isText(state.project) || state.project.scheduling === 'original' ? ' 角色候选' : ' / 4 角色'} · ${state.project.clips.length} 个片段` +
       (state.selection.length > 1 ? ` · 已选 ${state.selection.length} 个` : '');
     paintMobilePreview();
@@ -1033,6 +1137,7 @@
   function selectClip(id, scroll = false, mode = 'replace') {
     setSelection(mode === 'toggle' ? isSelected(id) ? state.selection.filter(value => value !== id) : [...state.selection, id]
       : mode === 'add' ? [...state.selection, id] : [id], id);
+    revealNativeClip(selectedClip());
     paintTimeline();
     paintInspector();
     icons();
@@ -1040,7 +1145,8 @@
       const clip = selectedClip();
       const x = clip.startMs / 1000 * state.zoom;
       $('timelineScroller').scrollTo({left: Math.max(0, x - 70)});
-      $('timelineCanvas').querySelector(`[data-track="${clip.characterId}"]`)?.scrollIntoView({block: 'nearest', inline: 'nearest'});
+      $('timelineCanvas').querySelector(`[data-clip="${clip.id}"]`)?.closest('[data-track]')
+        ?.scrollIntoView({block: 'nearest', inline: 'nearest'});
     }
   }
 
@@ -1437,6 +1543,9 @@
   function loadObject(value) {
     const project = M.importDocument(value, catalog);
     pause();
+    closeRoleSwitcher();
+    state.nativeTrackChoices = {};
+    state.nativeExpandedGroups = [];
     change(() => {
       state.project = project;
       setSelection(project.clips[0] ? [project.clips[0].id] : []);
@@ -1529,7 +1638,7 @@
       state.draggingCharacter = null;
     } else {
       const target = event.target.closest('[data-track]')?.dataset.track;
-      if (target && target !== team) change(() => {
+      if (target && target !== team && state.project.team.includes(target)) change(() => {
         const list = state.project.team.filter(value => value !== team);
         list.splice(list.indexOf(target), 0, team);
         state.project.team = list;
@@ -1597,6 +1706,27 @@
     const open = state.roleSwitcher;
     if (!open) return;
     if (event.target.closest('[data-role-close]')) { closeRoleSwitcher(true); return; }
+    if (open.groupId) {
+      const group = M.nativeTrackGroups(state.project).find(item => item.id === open.groupId);
+      const select = event.target.closest('[data-native-select]');
+      if (select && group?.characterIds.includes(select.dataset.nativeSelect)) {
+        const target = select.dataset.nativeSelect;
+        state.nativeTrackChoices[group.id] = target;
+        const clip = M.declared(state.project).find(item => item.characterId === target && !item.useCurrentCharacter);
+        closeRoleSwitcher();
+        if (clip) selectClip(clip.id, true);
+      } else if (group && event.target.closest('[data-native-expand]')) {
+        if (state.nativeExpandedGroups.includes(group.id)) {
+          state.nativeExpandedGroups = state.nativeExpandedGroups.filter(id => id !== group.id);
+          state.nativeTrackChoices[group.id] = group.characterIds.includes(selectedClip()?.characterId)
+            ? selectedClip().characterId : open.characterId;
+        } else state.nativeExpandedGroups.push(group.id);
+        closeRoleSwitcher();
+        paintTimeline();
+        icons();
+      }
+      return;
+    }
     if (event.target.closest('[data-role-process]')) { setExecutionMode('process'); return; }
     if (event.target.closest('[data-role-adding]')) {
       open.adding = !open.adding;
@@ -1631,7 +1761,7 @@
     }
   });
   document.addEventListener('pointerdown', event => {
-    if (state.roleSwitcher && !event.target.closest('#roleSwitcher, [data-role-toggle]')) closeRoleSwitcher();
+    if (state.roleSwitcher && !event.target.closest('#roleSwitcher, [data-role-toggle], [data-native-group-toggle]')) closeRoleSwitcher();
   });
   document.addEventListener('click', event => {
     const priorityAdd = event.target.closest('[data-priority-add]');
@@ -1647,6 +1777,8 @@
       updateClip('morePriorities', rows);
       return;
     }
+    const nativeToggle = event.target.closest('[data-native-group-toggle]');
+    if (nativeToggle) { openNativeGroup(nativeToggle.dataset.nativeGroupToggle, nativeToggle.dataset.nativeCharacter); return; }
     const roleToggle = event.target.closest('[data-role-toggle]');
     if (roleToggle) { openRoleSwitcher(roleToggle.dataset.roleToggle); return; }
     const shared = event.target.closest('[data-shared-character]');
@@ -1981,6 +2113,9 @@
     setSelection(state.project.clips[0] ? [state.project.clips[0].id] : []);
     state.undo = []; state.redo = []; state.playheadMs = 0; state.cycle = 1; state.hasLooped = false;
     state.roster = null; state.ownedOnly = false;
+    closeRoleSwitcher();
+    state.nativeTrackChoices = {};
+    state.nativeExpandedGroups = [];
     paint(); persist();
   }
   window.combatEditor = {apiVersion: 1, state, model: M, catalog, paint, loadObject, addCharacter, updateClip,
