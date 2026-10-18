@@ -440,7 +440,7 @@
       ${Number.isFinite(state.drag?.snapMs) ? `<div class="snap-guide" data-snap-guide="${state.drag.snapMs}"
         aria-hidden="true" style="left:${labelWidth() + state.drag.snapMs / 1000 * state.zoom}px"></div>` : ''}
       <div class="playhead" id="playhead" style="left:${labelWidth() + state.playheadMs / 1000 * state.zoom}px"></div>`;
-    const overviewRows = conditional ? [...rows].sort((a, b) => M.priorityOf(a) - M.priorityOf(b)) : rows;
+    const overviewRows = conditional ? M.declared(project).sort((a, b) => M.priorityOf(a) - M.priorityOf(b)) : rows;
     $('sequenceLabel').textContent = conditional ? '规则优先级' : M.isText(project) ? '命令顺序' : '动作顺序';
     $('sequenceList').innerHTML = overviewRows.map((clip, index) => {
       const character = M.character(catalog, clip.characterId), skill = selectedAbility(clip);
@@ -1067,14 +1067,12 @@
   }
 
   function assignCopyIndex(copy, count) {
-    const indices = state.project.clips.map(clip => {
-      const key = Object.keys(clip.sourceAction || {}).find(name => /^index$/i.test(name));
-      return key ? clip.sourceAction[key] : -1;
-    }).filter(Number.isFinite);
+    const indices = state.project.clips.map(M.priorityOf).filter(Number.isFinite);
     const source = M.clone(copy.sourceAction || {});
     for (const key of Object.keys(source)) if (/^index$/i.test(key)) delete source[key];
     source.Index = Math.max(state.project.clips.length + count, ...indices) + 1;
     copy.sourceAction = source;
+    copy.priority = source.Index;
   }
 
   function duplicateClip(id) {
@@ -1082,7 +1080,8 @@
     change(() => {
       const copied = M.makeClip(state.project, catalog, source.characterId, source.abilityId, M.endOf(source));
       const ownId = copied.id, ownName = copied.name, ownOrder = copied.order;
-      Object.assign(copied, M.clone(source), {id: ownId, name: ownName, order: ownOrder, startMs: M.endOf(source)});
+      Object.assign(copied, M.clone(source), {id: ownId, name: ownName, order: ownOrder,
+        declarationOrder: copied.declarationOrder, startMs: M.endOf(source)});
       assignCopyIndex(copied, 1);
       state.project.clips.push(copied);
       if (state.ripple) M.repairSchedule(state.project);
@@ -1107,7 +1106,7 @@
       const copies = sources.map(source => {
         const copy = M.makeClip(state.project, catalog, source.characterId, source.abilityId, source.startMs + delta);
         Object.assign(copy, M.clone(source), {id: copy.id, name: copy.name, order: copy.order,
-          startMs: source.startMs + delta});
+          declarationOrder: copy.declarationOrder, startMs: source.startMs + delta});
         assignCopyIndex(copy, sources.length);
         state.project.clips.push(copy);
         return copy.id;

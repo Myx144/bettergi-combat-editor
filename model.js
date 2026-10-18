@@ -13,6 +13,8 @@
   const seconds = value => Number((value / 1000).toFixed(3));
   const ms = value => Math.round(Number(value) * 1000);
   const ordered = project => [...project.clips].sort((a, b) => a.startMs - b.startMs || a.order - b.order);
+  const declared = project => [...project.clips].sort((a, b) =>
+    (a.declarationOrder ?? a.order) - (b.declarationOrder ?? b.order) || a.order - b.order);
   const castLockMs = clip => Number.isFinite(clip.lockOverrideMs)
     ? clip.lockOverrideMs : clip.castTiming?.lockMs ?? null;
   const isCast = clip => ['skill', 'burst'].includes(clip.abilityId);
@@ -92,7 +94,8 @@
     const preset = ability(catalog, characterId, abilityId);
     const timing = timingFor(characterId, abilityId);
     const number = project.nextId++;
-    const clip = {id: `clip${number}`, name: `片段${number}`, order: number, characterId: String(characterId),
+    const clip = {id: `clip${number}`, name: `片段${number}`, order: number, declarationOrder: number,
+      characterId: String(characterId),
       abilityId, startMs: snap(startMs), foregroundMs: timing?.lockMs !== null && timing?.lockMs !== undefined
         ? Math.max(100, timing.lockMs) : preset.foregroundMs,
       effectMs: preset.effectMs, cooldownMs: preset.cooldownMs, effectPolicy: preset.effectPolicy,
@@ -867,7 +870,7 @@
     if (isText(project)) throw new Error('当前为 TXT 模式，请导出 TXT 战斗策略');
     const issues = validate(project, catalog).filter(issue => issue.severity !== 'warning');
     if (check && issues.length) throw new Error(issues[0].message);
-    const rows = ordered(project);
+    const rows = project.scheduling === 'original' ? declared(project) : ordered(project);
     const strategy = clone(project.sourceRoot || {});
     const info = clone(project.sourceInfo || {});
     for (const key of Object.keys(strategy)) if (/^(info|actions)$/i.test(key)) delete strategy[key];
@@ -980,15 +983,17 @@
       || !Array.isArray(value.team) || !Array.isArray(value.clips)) throw new Error('不是支持的时间轴工程');
     const project = {...emptyProject(), ...clone(value)};
     if (!['json', 'txt'].includes(project.strategyFormat)) throw new Error('战斗策略格式无效');
-    if (isText(project)) { project.scheduling = 'sequence'; project.execution = 'process'; }
-    project.execution = value.execution ?? 'timeline';
+    if (isText(project)) project.scheduling = 'sequence';
+    project.execution = isText(project) ? 'process' : value.execution ?? 'timeline';
     if (!['process', 'timeline'].includes(project.execution)) throw new Error('工程调度方式无效');
     project.team = project.team.map(String);
     if ((!isText(project) && project.scheduling !== 'original' && project.team.length > 4)
       || new Set(project.team).size !== project.team.length) throw new Error('队伍配置无效');
     for (const id of project.team) character(catalog, id);
     const ids = new Set();
+    const legacyDeclaration = new Map(ordered(project).map((clip, index) => [clip.id, index]));
     for (const clip of project.clips) {
+      clip.declarationOrder ??= legacyDeclaration.get(clip.id);
       character(catalog, clip.characterId);
       if (clip.commandOverride === null || clip.commandOverride === undefined) {
         ability(catalog, clip.characterId, clip.abilityId);
@@ -1061,6 +1066,7 @@
     }
     const actions = read(value, 'Actions', null);
     if (!Array.isArray(actions) || !actions.length) throw new Error('JSON 中没有战斗动作');
+    const declarationOrder = new Map(actions.map((action, index) => [action, index]));
     const project = emptyProject();
     project.strategyFormat = strategyFormat;
     project.name = read(info, 'Name', '导入的战斗策略');
@@ -1096,6 +1102,7 @@
       clip.condition = read(read(action, 'Condition', {}), 'Expression', '');
       clip.sourceAction = clone(action);
       clip.priority = read(action, 'Index', 0);
+      clip.declarationOrder = declarationOrder.get(action);
       clip.commandOverride = text;
       if (mode === 'combo') clip.operations = operations.fromCommands(commands) || [];
       clip.useCurrentCharacter = !read(action, 'Character', '');
@@ -1155,7 +1162,7 @@
     return project;
   }
 
-  const api = {SWITCH_COOLDOWN_MS, clone, seconds, ms, ordered, endOf, snap, character, ability, abilities,
+  const api = {SWITCH_COOLDOWN_MS, clone, seconds, ms, ordered, declared, endOf, snap, character, ability, abilities,
     operations, isText, isProcess, priorityOf, prioritiesOf, isFixedAction, operationDurationMs,
     timingVariants, timingFor, castLockMs, castDurationMs, attackStartMs, actionDurationMs, actionEndOf,
     minimumForegroundMs, minimumLoopMs, loopReturn, foregroundRuns, resizeForegroundRun, idleIntervals, moveClips, placeClips, snapMove,

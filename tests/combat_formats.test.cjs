@@ -143,6 +143,55 @@ test('native JSON condition mode retains a healing priority branch rather than c
   assert.ok(M.priorityOf(normal) > M.priorityOf(heal));
 });
 
+test('JSON retains declaration-order priority ties across import, reference dragging and reimport', () => {
+  const native = {Info: {Name: '声明顺序'}, Actions: [
+    {Name: '高位替代', Character: '雷电将军', Action: 'attack(0.4)', Index: 30,
+      Condition: {Expression: 'false'}, MorePriorities: [{Priority: 0, Expression: 'true'}]},
+    {Name: '主条件', Character: '行秋', Action: 'attack(0.5)', Index: 0,
+      Condition: {Expression: 'true'}, MorePriorities: []}
+  ]};
+  const firstEligible = strategy => strategy.Actions.flatMap(action => [
+    {name: action.Name, priority: action.Index, condition: action.Condition.Expression},
+    ...action.MorePriorities.map(priority => ({name: action.Name, priority: priority.Priority,
+      condition: priority.Expression}))
+  ]).sort((a, b) => a.priority - b.priority).find(entry => entry.condition === 'true').name;
+  const p = M.importStrategy(native, catalog);
+  assert.equal(M.ordered(p)[0].name, '主条件');
+  assert.equal(firstEligible(M.exportStrategy(p, catalog)), '高位替代');
+  const reference = M.ordered(p).at(-1);
+  M.placeClips(p, [reference.id], -reference.startMs);
+  const exported = M.exportStrategy(p, catalog);
+  assert.deepEqual(exported.Actions.map(action => action.Name), native.Actions.map(action => action.Name));
+  assert.equal(firstEligible(exported), firstEligible(native));
+  const reopened = M.importStrategy(exported, catalog);
+  assert.equal(firstEligible(M.exportStrategy(reopened, catalog)), firstEligible(native));
+});
+
+test('legacy embedded condition projects without declaration metadata retain their saved layout and native order', () => {
+  const p = project();
+  p.scheduling = 'original';
+  attack(p, raiden, 4000);
+  attack(p, xingqiu, 1000);
+  const native = M.exportStrategy(p, catalog);
+  native.Actions.sort((a, b) => M.ordered(p).findIndex(clip => clip.name === a.Name)
+    - M.ordered(p).findIndex(clip => clip.name === b.Name));
+  for (const clip of native.Info.Config.CombatTimeline.project.clips) delete clip.declarationOrder;
+  const reopened = M.importStrategy(native, catalog);
+  assert.deepEqual(reopened.clips.map(clip => clip.startMs), p.clips.map(clip => clip.startMs));
+  assert.deepEqual(M.exportStrategy(reopened, catalog).Actions, native.Actions);
+});
+
+test('TXT project normalization always restores command sequencing, including old conflicting preview settings', () => {
+  const p = project('txt');
+  attack(p, raiden, 0);
+  p.execution = 'timeline';
+  p.scheduling = 'original';
+  const restored = M.normalizeProject(p, catalog);
+  assert.equal(restored.execution, 'process');
+  assert.equal(restored.scheduling, 'sequence');
+  assert.ok(M.isProcess(restored));
+});
+
 test('TXT malformed inputs report their line and unsupported native methods', () => {
   assert.throws(() => M.importTextStrategy('雷电将军 walk(w,no)', catalog), /第 1 行/);
   assert.throws(() => M.importTextStrategy('雷电将军 teleport(4)', catalog), /不支持指令 teleport/);
