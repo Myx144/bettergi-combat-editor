@@ -45,6 +45,8 @@
   }
   state.selected = state.project.clips[0]?.id || null;
   state.selection = state.selected ? [state.selected] : [];
+  window.CombatRuleEditor.create({model: M, catalog, getProject: () => state.project,
+    change, icons, toast, getSelected: selectedClip});
 
   function icons() { window.lucide?.createIcons(); }
   function avatarHtml(character, className = '') {
@@ -307,7 +309,8 @@
     const grid = ticks.map(value => `<i class="grid-line ${value % 5 === 0 ? 'major' : ''}"
       style="left:${value * state.zoom}px"></i>`).join('');
     const ruler = `<div class="ruler" data-ruler><div class="ruler-label sticky-label">${icon('layers-3')}<span>角色 / 技能</span></div>
-      ${ticks.map(value => `<span class="ruler-tick" style="left:${labelWidth() + value * state.zoom}px">${value}s</span>`).join('')}</div>`;
+      ${ticks.map(value => `<span class="ruler-tick" style="left:${labelWidth() + value * state.zoom}px">${value}s</span>`).join('')}
+      <div class="ruler-playhead" id="rulerPlayhead" aria-hidden="true"></div></div>`;
     const returnEntry = conditional ? null : M.loopReturn(project);
     const switchStrip = `<div class="switch-strip"><div class="sticky-label">${conditional ? '条件调度' : '换人冷却'}</div>
       ${(conditional ? [] : M.switches(project)).map((entry, i, changes) => `<span class="switch-window
@@ -595,9 +598,11 @@
       ${M.hasCompatibility(state.project) ? '<div class="execution-state">TXT 导出当前选中的角色分支</div>' : ''}
     </section>`;
     const priorities = M.prioritiesOf(clip), native = state.project.scheduling === 'original';
-    return `<section class="inspector-section"><h3>JSON 条件与分支</h3>${schedulingControl()}
+    const summary = window.CombatConditions.describe(window.CombatConditions.decode(clip.condition,
+      state.project.clips.map(row => row.name)));
+    return `<section class="inspector-section"><h3>JSON 触发条件</h3>${schedulingControl()}
       ${native ? `<label class="field"><span>动作优先级 · 数字越小越优先</span><input type="number" step="1"
-        data-property="priority" aria-label="动作优先级" value="${M.priorityOf(clip)}"></label>` : ''}
+        data-property="priority" aria-label="动作优先级" value="${html(M.priorityOf(clip))}"></label>` : ''}
       ${M.isProcess(state.project) && clip.followSourceId ? `<label class="checkbox-label"><input type="checkbox" data-property="followSourceId"
         checked><span>前置技能未执行时跳过</span></label>` : ''}
       ${M.isProcess(state.project) ? `<label class="field"><span>就绪条件</span><select data-property="readiness" aria-label="就绪条件">
@@ -608,31 +613,24 @@
         <option value="wait" ${clip.notReady === 'wait' ? 'selected' : ''}>等待后执行</option>
         <option value="skip" ${clip.notReady === 'skip' ? 'selected' : ''}>跳过此步骤</option>
       </select></label>` : ''}
-      <label class="field"><span>触发条件</span><textarea data-property="condition" aria-label="触发条件"
+      <p class="condition-summary">${html(summary)}</p>
+      <button type="button" class="edit-rules-button" data-edit-rules="${clip.id}">
+        ${icon('blocks')}<span>编排触发条件</span>${icon('chevron-right')}</button>
+      <div class="execution-state">${priorities.length ? `另有 ${priorities.length} 项独立额外触发` : '额外触发也会独立参与全局排序'}</div>
+      <details class="condition-advanced"><summary>高级原生表达式</summary>
+      <label class="field"><span>主触发表达式</span><textarea data-property="condition" aria-label="触发条件"
         spellcheck="false" placeholder="无额外条件">${html(clip.condition)}</textarea></label>
-      <div class="condition-tools">
-        <select id="conditionJoin" class="condition-join" aria-label="条件关系"><option value="and">并且</option><option value="or">或者</option><option value="replace">替换</option></select>
-        <select id="conditionPreset" aria-label="添加原生条件"><option value="">添加原生条件</option>
-          <option value="e-ready()">E 战技就绪</option><option value="q-ready()">Q 爆发就绪</option>
-          <option value="low-hp()">当前前台低血量</option><option value="!low-hp()">当前前台血量正常</option>
-          <option value="onfield()">本角色在前台</option>
-          <option value="in-party(${html(M.character(catalog, clip.characterId).name)})">本角色在队中</option>
-          <option value="!(since() &lt; ${Math.max(1, M.seconds(clip.cooldownMs))})">距上次执行达到冷却</option>
-          ${M.ordered(state.project).filter(row => row.id !== clip.id).map(row =>
-            `<option value="count(${html(row.name)}) &gt; count()">已执行 ${html(row.name)}</option>`).join('')}
-        </select>
-      </div>
-      <div class="priority-heading"><span>替代触发条件与优先级</span><button type="button" class="icon-button"
+      <div class="priority-heading"><span>额外触发条件与优先级</span><button type="button" class="icon-button"
         data-priority-add title="添加替代条件" aria-label="添加替代条件">${icon('plus')}</button></div>
       ${priorities.map((entry, index) => {
         const get = (field, fallback) => entry[Object.keys(entry).find(key => key.toLowerCase() === field.toLowerCase())] ?? fallback;
         return `<div class="priority-rule">
-          <input type="number" step="1" value="${get('Priority', 0)}" data-priority-field="Priority" data-priority-index="${index}" aria-label="替代优先级 ${index + 1}">
+          <input type="number" step="1" value="${html(get('Priority', 0))}" data-priority-field="Priority" data-priority-index="${index}" aria-label="替代优先级 ${index + 1}">
           <textarea spellcheck="false" data-priority-field="Expression" data-priority-index="${index}"
             aria-label="替代条件 ${index + 1}">${html(get('Expression', ''))}</textarea>
           <button type="button" class="icon-button" data-priority-remove="${index}" title="删除替代条件"
             aria-label="删除替代条件 ${index + 1}">${icon('x')}</button></div>`;
-      }).join('')}
+      }).join('')}</details>
       ${clip.abilityId === 'skill' ? `<label class="checkbox-label"><input type="checkbox" data-property="ensureCast"
         ${clip.ensureCast ? 'checked' : ''}><span>战技冷却检查与有限重试</span></label>` : ''}
       ${M.isProcess(state.project) && (clip.abilityId === 'skill' || clip.abilityId === 'combo')
@@ -806,6 +804,9 @@
     const focusOperationIndex = active?.dataset.operationIndex;
     const focusId = active?.id;
     const selectionStart = active?.selectionStart;
+    const openInspectorDetails = ['condition-advanced', 'advanced-properties'].filter(name =>
+      $('inspectorContent').querySelector(`details.${name}[open]`));
+    const inspectorClipId = $('inspectorContent').querySelector('[data-edit-rules]')?.dataset.editRules;
     const libraryScroll = $('characterList').scrollTop;
     $('projectName').value = state.project.name;
     $('undo').disabled = !state.undo.length;
@@ -814,6 +815,12 @@
     $('characterList').scrollTop = libraryScroll;
     paintTimeline();
     paintInspector();
+    if (inspectorClipId === state.selected) {
+      for (const name of openInspectorDetails) {
+        const details = $('inspectorContent').querySelector(`details.${name}`);
+        if (details) details.open = true;
+      }
+    }
     paintRoleSwitcher();
     icons();
     const replacement = focusOperation
@@ -828,8 +835,18 @@
     }
   }
 
+  function paintCursorPosition() {
+    const offset = state.playheadMs / 1000 * state.zoom;
+    for (const id of ['playhead', 'rulerPlayhead']) {
+      const cursor = $(id);
+      if (!cursor) continue;
+      cursor.style.left = `${labelWidth() + offset}px`;
+      cursor.hidden = offset < $('timelineScroller').scrollLeft;
+    }
+  }
+
   function paintPlayhead() {
-    if ($('playhead')) $('playhead').style.left = `${labelWidth() + state.playheadMs / 1000 * state.zoom}px`;
+    paintCursorPosition();
     const totalSeconds = Math.floor(state.playheadMs / 1000);
     const fraction = Math.floor(state.playheadMs % 1000 / 100);
     $('timeReadout').textContent = `${String(Math.floor(totalSeconds / 60)).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}.${fraction}`;
@@ -1477,17 +1494,12 @@
   $('timelineCanvas').addEventListener('pointermove', pointerMove);
   $('timelineCanvas').addEventListener('pointerup', finishPointer);
   $('timelineCanvas').addEventListener('pointercancel', cancelPointer);
+  $('timelineScroller').addEventListener('scroll', paintCursorPosition, {passive: true});
 
   $('inspectorContent').addEventListener('change', event => {
     const input = event.target;
     if (input.readOnly) return;
-    if (input.id === 'conditionPreset') {
-      const clip = selectedClip();
-      if (!clip || !input.value) return;
-      const join = $('conditionJoin').value;
-      updateClip('condition', !clip.condition.trim() || join === 'replace' ? input.value
-        : `(${clip.condition.trim()}) ${join === 'or' ? '||' : '&&'} (${input.value})`);
-    } else if (input.dataset.priorityField) {
+    if (input.dataset.priorityField) {
       const clip = selectedClip();
       if (!clip) return;
       const rows = M.clone(M.prioritiesOf(clip)), index = Number(input.dataset.priorityIndex);

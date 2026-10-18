@@ -6,15 +6,18 @@
   <meta name="color-scheme" content="light">
   <title>战斗时间轴 · BetterGI Combat Editor</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="editor.css?v=combat-formats-20261018">
+  <link rel="stylesheet" href="editor.css?v=combat-rules-20261018">
   <script src="vendor/lucide.min.js" defer></script>
+  <script src="vendor/jsep.iife.min.js" defer></script>
   <script src="catalog.js" defer></script>
   <script src="cast-timings.js" defer></script>
   <script src="operations.js?v=combat-formats-20261018" defer></script>
   <script src="strategy-formats.js?v=combat-formats-20261018" defer></script>
   <script src="roles.js?v=combat-formats-20261018" defer></script>
   <script src="model.js?v=combat-formats-20261018-1" defer></script>
-  <script src="editor.js?v=combat-formats-20261018-1" defer></script>
+  <script src="conditions.js?v=combat-rules-20261018" defer></script>
+  <script src="rule-editor.js?v=combat-rules-20261018" defer></script>
+  <script src="editor.js?v=combat-rules-20261018" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -35,6 +38,7 @@
       <button class="icon-button" id="importProject" type="button" title="打开工程、TXT 或 JSON 策略" aria-label="打开工程、TXT 或 JSON 策略"><i data-lucide="folder-open"></i></button>
       <button class="icon-button" id="saveProject" type="button" title="保存工程文件" aria-label="保存工程文件"><i data-lucide="save"></i></button>
       <button class="icon-button" id="showJson" type="button" title="查看策略源码" aria-label="查看策略源码"><i data-lucide="code-xml"></i></button>
+      <button class="icon-button" id="jsonGuide" type="button" title="JSON 执行指南" aria-label="JSON 执行指南"><i data-lucide="book-open"></i></button>
       <button class="export-button" id="exportStrategy" type="button"><i data-lucide="download"></i><span>导出战斗 JSON</span></button>
     </nav>
   </header>
@@ -153,6 +157,40 @@
   <aside id="roleSwitcher" class="role-switcher" role="dialog" aria-label="角色定位与兼容分支" hidden></aside>
   <input id="importInput" type="file" accept=".json,.txt,application/json,text/plain" hidden>
 
+  <dialog id="rulesDialog" class="rules-dialog" aria-labelledby="rulesTitle">
+    <header class="dialog-heading"><h2 id="rulesTitle">JSON 触发条件</h2>
+      <button class="icon-button" type="button" data-close-dialog="rulesDialog" title="关闭条件编排" aria-label="关闭条件编排"><i data-lucide="x"></i></button></header>
+    <nav class="rules-view-tabs" role="tablist" aria-label="JSON 规则视图">
+      <button type="button" data-rules-view="edit" role="tab"><i data-lucide="blocks"></i><span>条件编排</span></button>
+      <button type="button" data-rules-view="queue" role="tab"><i data-lucide="list-ordered"></i><span>优先级队列</span></button>
+      <button type="button" data-rules-view="guide" role="tab"><i data-lucide="book-open"></i><span>执行指南</span></button>
+    </nav>
+    <div id="ruleEditView" class="rule-edit-view">
+      <aside id="conditionLibrary" class="condition-library" aria-label="条件素材库">
+        <h3>条件素材</h3>
+        <nav id="conditionCategories" class="condition-categories" aria-label="条件分类"></nav>
+        <div id="conditionMaterials" class="condition-materials"></div>
+      </aside>
+      <section class="rule-composition" aria-label="动作触发条件">
+        <p id="ruleModeNote" class="rule-mode-note"></p>
+        <div id="ruleLanes" class="rule-lanes"></div>
+      </section>
+    </div>
+    <section id="ruleQueueView" class="rule-queue-view" hidden aria-label="全局优先级队列">
+      <div class="queue-introduction"><h3>全局检查顺序</h3><span id="queueStats"></span>
+        <p>本队列按实际导出 JSON 展开，包含尚未应用的条件修改。运行时先按实际队伍过滤，再从上到下选择第一个成立的条目，执行后回到队首。</p>
+        <p id="queueWarning" class="queue-warning"></p></div>
+      <ol id="priorityQueue" class="priority-queue"></ol>
+    </section>
+    <section id="ruleGuideView" class="rule-guide-view" hidden aria-label="JSON 执行指南">
+      <nav id="ruleGuideTabs" class="rule-guide-tabs" aria-label="指南章节"></nav>
+      <div id="ruleGuideContent" class="rule-guide-content"></div>
+    </section>
+    <p id="ruleEditorError" class="rule-editor-error" role="alert"></p>
+    <footer class="dialog-actions rules-actions"><span id="ruleDraftStatus" role="status"></span>
+      <button id="cancelRules" type="button" data-close-dialog="rulesDialog">关闭</button>
+      <button id="applyRules" type="button" class="primary"><i data-lucide="check"></i><span>应用条件</span></button></footer>
+  </dialog>
   <dialog id="jsonDialog" class="json-dialog">
     <header class="dialog-heading"><h2 id="sourceTitle">战斗 JSON</h2><button class="icon-button" type="button" data-close-dialog="jsonDialog" aria-label="关闭策略源码"><i data-lucide="x"></i></button></header>
     <div class="json-meta"><span id="jsonMode"></span><span id="jsonCount"></span></div>

@@ -21,6 +21,13 @@ The MIT license at the repository root covers the original editor and desktop wr
 
 Character and talent images are referenced by public URLs at `https://enka.network/ui/`. The image files are not bundled in the repository or desktop release. Game artwork, names and trademarks retain their respective owners' rights, including HoYoverse / miHoYo. This project's MIT license grants no rights to that artwork. Images are optional; offline editing uses text fallbacks.
 
+## jsep
+
+- Project: https://github.com/EricSmekens/jsep
+- Included version: 1.4.0, from the npm `jsep` package.
+- License: MIT; full notice in `vendor/jsep.LICENSE`.
+- Unmodified browser IIFE and CommonJS builds are vendored for offline condition parsing. The editor restricts its operator set and adapts BetterGI identifiers; it does not execute JavaScript expressions.
+
 ## Frame measurements
 
 No KQM/TCL measurement dataset is redistributed in this repository or desktop release. `cast-timings.js` starts empty. User calibration is stored in user projects. The small tables under `tests/` are explicitly synthetic test inputs.
