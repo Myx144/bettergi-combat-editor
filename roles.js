@@ -11,7 +11,8 @@
     const profileFields = ['abilityId', 'foregroundMs', 'effectMs', 'cooldownMs', 'effectPolicy',
       'castTiming', 'castEstimateMs', 'lockOverrideMs', 'castInputMs', 'effectSource',
       'hold', 'followAttack', 'attackAfterMs', 'followSourceId', 'ensureCast', 'condition',
-      'readiness', 'notReady', 'protectCast', 'operation', 'operations', 'sourceAction', 'commandOverride'];
+      'readiness', 'notReady', 'protectCast', 'operation', 'operations', 'sourceAction', 'commandOverride',
+      'txtSkillPolicy', 'txtRounds', 'txtReady', 'priority', 'morePriorities'];
     const profileOf = clip => Object.fromEntries(profileFields.filter(key => clip[key] !== undefined)
       .map(key => [key, M.clone(clip[key])]));
     const hasCompatibility = project => (project.roleSlots || []).some(slot => slot.candidates.length > 1);

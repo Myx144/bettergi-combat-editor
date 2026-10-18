@@ -8,6 +8,8 @@
     {id: 'dash', name: '冲刺', key: '冲刺', iconName: 'footprints', foregroundMs: 200},
     {id: 'jump', name: '跳跃', key: 'Space', iconName: 'arrow-up-from-line', foregroundMs: 200},
     {id: 'wait', name: '等待', key: '等待', iconName: 'pause', foregroundMs: 500},
+    {id: 'ready', name: '等待操作恢复', key: '恢复', iconName: 'circle-check', foregroundMs: 200},
+    {id: 'check', name: '检查战斗结束', key: '检测', iconName: 'scan-eye', foregroundMs: 100},
     {id: 'keypress', name: '点按按键', key: '按键', iconName: 'keyboard', foregroundMs: 100},
     {id: 'keyhold', name: '按键长按', key: '长按', iconName: 'keyboard', foregroundMs: 500},
     {id: 'mousehold', name: '鼠标长按', key: '鼠标', iconName: 'mouse', foregroundMs: 500},
@@ -19,7 +21,7 @@
     ['attack', '普攻'], ['charge', '重击'], ['skill', '战技'], ['burst', '爆发'],
     ['keypress', '点按按键'], ['keyhold', '按键长按'], ['keydown', '按下按键'], ['keyup', '松开按键'],
     ['click', '鼠标点击'], ['mousehold', '鼠标长按'], ['mousedown', '按下鼠标'], ['mouseup', '松开鼠标'],
-    ['moveby', '转向'], ['scroll', '滚轮'], ['ready', '等待操作恢复']
+    ['moveby', '转向'], ['scroll', '滚轮'], ['ready', '等待操作恢复'], ['check', '检查战斗结束']
   ].map(([id, name]) => ({id, name}));
   const keyAliases = {SPACE: 'VK_SPACE', SHIFT: 'VK_LSHIFT', CTRL: 'VK_LCONTROL', CONTROL: 'VK_LCONTROL',
     ALT: 'VK_LMENU', ENTER: 'VK_RETURN', RETURN: 'VK_RETURN', TAB: 'VK_TAB', ESC: 'VK_ESCAPE',

@@ -33,7 +33,8 @@ if (!app.requestSingleInstanceLock()) {
       item.setSaveDialogOptions({
         title: '保存文件',
         defaultPath: path.join(app.getPath('documents'), path.basename(item.getFilename())),
-        filters: [{name: 'JSON', extensions: ['json']}],
+        filters: [{name: item.getFilename().toLowerCase().endsWith('.txt') ? 'TXT' : 'JSON',
+          extensions: [item.getFilename().toLowerCase().endsWith('.txt') ? 'txt' : 'json']}],
         properties: ['createDirectory', 'showOverwriteConfirmation']
       });
     });
@@ -59,9 +60,9 @@ if (!app.requestSingleInstanceLock()) {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       {label: '文件', submenu: [
         {label: '新建工程', accelerator: 'CmdOrCtrl+N', click: () => command('newProject')},
-        {label: '打开工程或战斗 JSON', accelerator: 'CmdOrCtrl+O', click: () => command('importProject')},
+        {label: '打开工程、TXT 或 JSON 策略', accelerator: 'CmdOrCtrl+O', click: () => command('importProject')},
         {label: '保存工程', accelerator: 'CmdOrCtrl+S', click: () => command('saveProject')},
-        {label: '导出战斗 JSON', accelerator: 'CmdOrCtrl+Shift+S', click: () => command('exportStrategy')},
+        {label: '导出战斗策略', accelerator: 'CmdOrCtrl+Shift+S', click: () => command('exportStrategy')},
         {type: 'separator'}, {role: 'quit', label: '退出'}
       ]},
       {label: '视图', submenu: [

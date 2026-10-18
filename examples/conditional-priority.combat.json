@@ -1,0 +1,59 @@
+{
+  "Info": {
+    "Name": "低血量治疗优先 · JSON 条件示例",
+    "Author": "",
+    "Config": {},
+    "PreActions": []
+  },
+  "Actions": [
+    {
+      "Name": "治疗爆发",
+      "Character": "班尼特",
+      "Action": "burst,ready",
+      "Index": -10,
+      "Condition": {
+        "Expression": "low-hp() && q-ready()"
+      },
+      "EnsureCast": false,
+      "MorePriorities": [
+        {
+          "Priority": 10,
+          "Expression": "q-ready() && !(since() < 15)"
+        }
+      ]
+    },
+    {
+      "Name": "雷电战技",
+      "Character": "雷电将军",
+      "Action": "skill",
+      "Index": 0,
+      "Condition": {
+        "Expression": "e-ready()"
+      },
+      "EnsureCast": true,
+      "MorePriorities": []
+    },
+    {
+      "Name": "行秋战技",
+      "Character": "行秋",
+      "Action": "skill",
+      "Index": 1,
+      "Condition": {
+        "Expression": "e-ready()"
+      },
+      "EnsureCast": true,
+      "MorePriorities": []
+    },
+    {
+      "Name": "普通攻击",
+      "Character": "",
+      "Action": "attack(0.5)",
+      "Index": 1000,
+      "Condition": {
+        "Expression": "true"
+      },
+      "EnsureCast": false,
+      "MorePriorities": []
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+// 雷国 · TXT 顺序命令示例
+// 循环与战斗结束由 BetterGI 任务入口控制；动作间隔需按实际角色校准。
+雷电将军 skill(wait)
+行秋 burst,ready,skill(wait)
+班尼特 burst,ready,skill(wait)
+香菱 burst,ready,skill(wait)
+雷电将军 burst,ready,attack(1.5),wait(0.2),attack(1.5),attack(2)

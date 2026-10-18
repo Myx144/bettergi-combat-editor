@@ -19,7 +19,7 @@
     roster: null, ownedOnly: false, roleSwitcher: null};
   const mobileLayout = matchMedia('(max-width: 710px)');
   const mobileControls = [
-    ['projectHeading', 'mobileProjectSlot'], ['executionMode', 'mobileModeSlot'],
+    ['projectHeading', 'mobileProjectSlot'], ['strategyModeControl', 'mobileFormatSlot'], ['executionMode', 'mobileModeSlot'],
     ['libraryToggle', 'mobileLibrarySlot'], ['inspectorToggle', 'mobileInspectorSlot'],
     ['fitLoop', 'mobileFitLoopSlot'], ['undo', 'mobileUndoSlot'], ['redo', 'mobileRedoSlot'],
     ['zoomOut', 'mobileZoomOutSlot'], ['zoom', 'mobileZoomSlot'], ['zoomIn', 'mobileZoomInSlot'],
@@ -288,6 +288,7 @@
 
   function paintTimeline() {
     const project = state.project;
+    const conditional = !M.isText(project) && project.scheduling === 'original';
     const rowHeight = trackHeight(), actionHeight = clipHeight();
     const connectionY = 75 + actionHeight / 2;
     const rows = M.ordered(project);
@@ -307,16 +308,16 @@
       style="left:${value * state.zoom}px"></i>`).join('');
     const ruler = `<div class="ruler" data-ruler><div class="ruler-label sticky-label">${icon('layers-3')}<span>角色 / 技能</span></div>
       ${ticks.map(value => `<span class="ruler-tick" style="left:${labelWidth() + value * state.zoom}px">${value}s</span>`).join('')}</div>`;
-    const returnEntry = M.loopReturn(project);
-    const switchStrip = `<div class="switch-strip"><div class="sticky-label">换人冷却</div>
-      ${M.switches(project).map((entry, i, changes) => `<span class="switch-window
+    const returnEntry = conditional ? null : M.loopReturn(project);
+    const switchStrip = `<div class="switch-strip"><div class="sticky-label">${conditional ? '条件调度' : '换人冷却'}</div>
+      ${(conditional ? [] : M.switches(project)).map((entry, i, changes) => `<span class="switch-window
         ${i > 0 && entry.startMs - changes[i - 1].startMs < 1000 ? 'invalid' : ''}"
         style="left:${labelWidth() + entry.startMs / 1000 * state.zoom}px;width:${state.zoom}px"
         title="${html(M.character(catalog, entry.characterId).name)} · ${time(entry.startMs)}s">换人</span>`).join('')}
         ${returnEntry ? `<span class="switch-window loop-return-window" data-loop-cooldown
           style="left:${labelWidth() + returnEntry.startMs / 1000 * state.zoom}px;width:${state.zoom}px"
           title="回到${html(M.character(catalog, returnEntry.characterId).name)}，末尾保留 1 秒换人冷却">回切 · 1s</span>` : ''}</div>`;
-    const links = rows.flatMap((clip, index) => {
+    const links = conditional ? [] : rows.flatMap((clip, index) => {
       const next = rows[index + 1];
       if (next && next.characterId !== clip.characterId) return [{from: clip, to: next, loop: false}];
       if (!next && project.repeat) return [{from: clip, to: rows[0], loop: true}];
@@ -428,7 +429,7 @@
           data-link-to="${link.to.id}" data-loop-link="${link.loop}" d="M ${x1} ${y1} C ${x1 + 14} ${y1}, ${x2 - 14} ${y2}, ${x2} ${y2}"
           marker-end="url(#switchArrow)"></path>`;
       }).join('')}</svg>`;
-    const loopTarget = rows.length && project.repeat && !returnEntry ? `<div class="loop-target"
+    const loopTarget = !conditional && rows.length && project.repeat && !returnEntry ? `<div class="loop-target"
       style="left:${labelWidth() + project.durationMs / 1000 * state.zoom}px;top:${connectionY - 17 + project.team.indexOf(rows[0].characterId) * rowHeight}px">
       ${icon('repeat-2')}<span>下一轮</span></div>` : '';
     $('timelineCanvas').innerHTML = ruler + switchStrip + tracks + connections + loopTarget +
@@ -439,14 +440,16 @@
       ${Number.isFinite(state.drag?.snapMs) ? `<div class="snap-guide" data-snap-guide="${state.drag.snapMs}"
         aria-hidden="true" style="left:${labelWidth() + state.drag.snapMs / 1000 * state.zoom}px"></div>` : ''}
       <div class="playhead" id="playhead" style="left:${labelWidth() + state.playheadMs / 1000 * state.zoom}px"></div>`;
-    $('sequenceList').innerHTML = rows.map((clip, index) => {
+    const overviewRows = conditional ? [...rows].sort((a, b) => M.priorityOf(a) - M.priorityOf(b)) : rows;
+    $('sequenceLabel').textContent = conditional ? '规则优先级' : M.isText(project) ? '命令顺序' : '动作顺序';
+    $('sequenceList').innerHTML = overviewRows.map((clip, index) => {
       const character = M.character(catalog, clip.characterId), skill = selectedAbility(clip);
-      return `${index ? icon('chevron-right').replace('data-lucide', 'class="sequence-arrow" data-lucide') : ''}
+      return `${index && !conditional ? icon('chevron-right').replace('data-lucide', 'class="sequence-arrow" data-lucide') : ''}
         <button type="button" class="sequence-item ${isSelected(clip.id) ? 'selected' : ''}" data-sequence="${clip.id}"
           style="${css(character)}" title="${html(character.name)} · ${html(skill.name)}">
-          ${index === 0 || rows[index - 1].characterId !== clip.characterId ? avatarHtml(character) : ''}
+          ${index === 0 || overviewRows[index - 1].characterId !== clip.characterId ? avatarHtml(character) : ''}
           <span><strong>${['attack', 'wait'].includes(clip.abilityId) ? html(skill.name) : html(skill.key)}</strong>
-            <small>${time(clip.startMs)}s</small></span></button>`;
+            <small>${conditional ? `P${M.priorityOf(clip)}` : `${time(clip.startMs)}s`}</small></span></button>`;
     }).join('');
     paintSelection();
     $('validationStatus').innerHTML = errors.length ? `${icon('circle-alert')}<span>${errors.length} 项待调整</span>`
@@ -456,9 +459,10 @@
     $('validationStatus').classList.toggle('has-warnings', !errors.length && issues.length > 0);
     $('exportStrategy').disabled = errors.length > 0;
     $('executionMode').value = executionMode();
-    $('previewStatus').textContent = M.isProcess(project) ? '参考排布 · 按步骤执行'
-      : project.scheduling === 'original' ? '参考排布 · 原条件优先' : '计划时刻预览';
-    $('durationLabel').textContent = M.isProcess(project) ? '秒 · 参考' : '秒';
+    $('previewStatus').textContent = M.isText(project) ? 'TXT · 命令顺序参考'
+      : M.isProcess(project) ? 'JSON · 按步骤执行'
+        : project.scheduling === 'original' ? 'JSON · 条件策略参考' : 'JSON · 计划时刻预览';
+    $('durationLabel').textContent = M.isProcess(project) || project.scheduling === 'original' ? '秒 · 参考' : '秒';
     $('fitLoop').title = M.isProcess(project) ? '整理动作间隔与换人边界' : '按冷却整理排轴';
     $('loopDuration').value = M.seconds(project.durationMs);
     $('repeatToggle').checked = project.repeat;
@@ -481,7 +485,8 @@
     for (const link of $('timelineCanvas').querySelectorAll('[data-link-from]')) {
       link.classList.toggle('selected', isSelected(link.dataset.linkFrom));
     }
-    $('projectStats').textContent = `${state.project.team.length} / 4 角色 · ${state.project.clips.length} 个片段` +
+    $('projectStats').textContent = `${state.project.team.length}${
+      M.isText(state.project) || state.project.scheduling === 'original' ? ' 角色候选' : ' / 4 角色'} · ${state.project.clips.length} 个片段` +
       (state.selection.length > 1 ? ` · 已选 ${state.selection.length} 个` : '');
     paintMobilePreview();
   }
@@ -551,21 +556,103 @@
   }
 
   function setExecutionMode(mode) {
+    if (M.isText(state.project)) return;
     change(() => {
+      if (mode !== 'original' && state.project.team.length > 4) throw new Error('步骤编排最多使用 4 个角色，请先调整角色候选');
       state.project.scheduling = mode === 'original' ? 'original' : 'sequence';
       if (mode !== 'original') state.project.execution = mode;
     });
   }
 
   function schedulingControl() {
+    if (M.isText(state.project)) return `<div class="execution-state">TXT · 顺序命令</div>
+      <label class="checkbox-label"><input id="txtWaitGaps" type="checkbox"
+        ${state.project.txtWaitGaps ? 'checked' : ''}><span>空隙导出为等待</span></label>`;
     const mode = executionMode();
     return `<label class="field"><span>执行方式</span><select id="schedulingMode" aria-label="调度方式">
       <option value="process" ${mode === 'process' ? 'selected' : ''}>按步骤推进</option>
       <option value="timeline" ${mode === 'timeline' ? 'selected' : ''}>按计划时刻</option>
-      <option value="original" ${mode === 'original' ? 'selected' : ''}>原条件优先</option>
+      <option value="original" ${mode === 'original' ? 'selected' : ''}>条件与优先级</option>
     </select></label>${state.project.scheduling === 'original'
       ? '<div class="execution-state">原触发条件与优先级保留</div>'
       : M.isProcess(state.project) ? '<div class="execution-state">步骤完成后推进 · 空白站场为相对等待</div>' : ''}`;
+  }
+
+  function executionFields(clip) {
+    if (M.isText(state.project)) return `<section class="inspector-section"><h3>TXT 命令衔接</h3>
+      ${schedulingControl()}
+      ${clip.abilityId === 'skill' ? `<label class="field"><span>战技未就绪时</span><select data-property="txtSkillPolicy" aria-label="TXT 战技策略">
+        <option value="direct" ${(clip.txtSkillPolicy || 'direct') === 'direct' ? 'selected' : ''}>直接尝试施放 · skill</option>
+        <option value="wait" ${clip.txtSkillPolicy === 'wait' ? 'selected' : ''}>等待冷却 · skill(wait)</option>
+        <option value="fast" ${clip.txtSkillPolicy === 'fast' ? 'selected' : ''}>跳过战技 · skill(fast)</option>
+      </select></label>` : ''}
+      <label class="checkbox-label"><input type="checkbox" data-property="txtReady"
+        ${clip.txtReady ? 'checked' : ''}><span>之后等待操作界面恢复 · ready</span></label>
+      ${clip.abilityId === 'skill' ? `<label class="checkbox-label"><input type="checkbox" data-property="protectCast"
+        ${clip.protectCast !== false ? 'checked' : ''}><span>追加已校准的释放等待</span></label>` : ''}
+      <label class="field"><span>限定轮次 · 仅一键战斗</span><input data-property="txtRounds" aria-label="TXT 限定轮次"
+        value="${html(clip.txtRounds || '')}" placeholder="所有轮次，例如 1,3-5"></label>
+      ${M.hasCompatibility(state.project) ? '<div class="execution-state">TXT 导出当前选中的角色分支</div>' : ''}
+    </section>`;
+    const priorities = M.prioritiesOf(clip), native = state.project.scheduling === 'original';
+    return `<section class="inspector-section"><h3>JSON 条件与分支</h3>${schedulingControl()}
+      ${native ? `<label class="field"><span>动作优先级 · 数字越小越优先</span><input type="number" step="1"
+        data-property="priority" aria-label="动作优先级" value="${M.priorityOf(clip)}"></label>` : ''}
+      ${M.isProcess(state.project) && clip.followSourceId ? `<label class="checkbox-label"><input type="checkbox" data-property="followSourceId"
+        checked><span>前置技能未执行时跳过</span></label>` : ''}
+      ${M.isProcess(state.project) ? `<label class="field"><span>就绪条件</span><select data-property="readiness" aria-label="就绪条件">
+        <option value="none" ${clip.readiness === 'none' ? 'selected' : ''}>无技能就绪条件</option>
+        <option value="skill" ${clip.readiness === 'skill' ? 'selected' : ''}>E · 战技可用</option>
+        <option value="burst" ${clip.readiness === 'burst' ? 'selected' : ''}>Q · 爆发可用</option>
+      </select></label><label class="field"><span>条件未满足</span><select data-property="notReady" aria-label="条件未满足">
+        <option value="wait" ${clip.notReady === 'wait' ? 'selected' : ''}>等待后执行</option>
+        <option value="skip" ${clip.notReady === 'skip' ? 'selected' : ''}>跳过此步骤</option>
+      </select></label>` : ''}
+      <label class="field"><span>触发条件</span><textarea data-property="condition" aria-label="触发条件"
+        spellcheck="false" placeholder="无额外条件">${html(clip.condition)}</textarea></label>
+      <div class="condition-tools">
+        <select id="conditionJoin" class="condition-join" aria-label="条件关系"><option value="and">并且</option><option value="or">或者</option><option value="replace">替换</option></select>
+        <select id="conditionPreset" aria-label="添加原生条件"><option value="">添加原生条件</option>
+          <option value="e-ready()">E 战技就绪</option><option value="q-ready()">Q 爆发就绪</option>
+          <option value="low-hp()">当前前台低血量</option><option value="!low-hp()">当前前台血量正常</option>
+          <option value="onfield()">本角色在前台</option>
+          <option value="in-party(${html(M.character(catalog, clip.characterId).name)})">本角色在队中</option>
+          <option value="!(since() &lt; ${Math.max(1, M.seconds(clip.cooldownMs))})">距上次执行达到冷却</option>
+          ${M.ordered(state.project).filter(row => row.id !== clip.id).map(row =>
+            `<option value="count(${html(row.name)}) &gt; count()">已执行 ${html(row.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="priority-heading"><span>替代触发条件与优先级</span><button type="button" class="icon-button"
+        data-priority-add title="添加替代条件" aria-label="添加替代条件">${icon('plus')}</button></div>
+      ${priorities.map((entry, index) => {
+        const get = (field, fallback) => entry[Object.keys(entry).find(key => key.toLowerCase() === field.toLowerCase())] ?? fallback;
+        return `<div class="priority-rule">
+          <input type="number" step="1" value="${get('Priority', 0)}" data-priority-field="Priority" data-priority-index="${index}" aria-label="替代优先级 ${index + 1}">
+          <textarea spellcheck="false" data-priority-field="Expression" data-priority-index="${index}"
+            aria-label="替代条件 ${index + 1}">${html(get('Expression', ''))}</textarea>
+          <button type="button" class="icon-button" data-priority-remove="${index}" title="删除替代条件"
+            aria-label="删除替代条件 ${index + 1}">${icon('x')}</button></div>`;
+      }).join('')}
+      ${clip.abilityId === 'skill' ? `<label class="checkbox-label"><input type="checkbox" data-property="ensureCast"
+        ${clip.ensureCast ? 'checked' : ''}><span>战技冷却检查与有限重试</span></label>` : ''}
+      ${M.isProcess(state.project) && (clip.abilityId === 'skill' || clip.abilityId === 'combo')
+        ? `<label class="checkbox-label"><input type="checkbox" data-property="protectCast"
+          ${clip.protectCast !== false ? 'checked' : ''}><span>等待已校准的释放锁定</span></label>` : ''}
+    </section>`;
+  }
+
+  function paintMode() {
+    const format = M.isText(state.project) ? 'txt' : 'json';
+    for (const button of $('strategyModeControl').querySelectorAll('[data-strategy-format]')) {
+      const selected = button.dataset.strategyFormat === format;
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    }
+    $('executionMode').hidden = format === 'txt';
+    $('exportStrategy').querySelector('span').textContent = `导出战斗 ${format.toUpperCase()}`;
+    $('exportStrategy').title = `导出战斗 ${format.toUpperCase()}`;
+    $('repeatLabel').textContent = format === 'txt' || state.project.scheduling === 'original' ? '预览循环' : '循环';
+    $('newFormat').value = format;
   }
 
   function operationInputs(operation, index = null, characterId = null) {
@@ -659,8 +746,8 @@
         <h3>${html(state.project.name)}</h3>
         <label class="field"><span>作者</span><input id="projectAuthor" value="${html(state.project.author)}" maxlength="80"></label>
         ${schedulingControl()}
-        <label class="field"><span>开场动作</span><textarea id="preActions" spellcheck="false"
-          aria-label="开场动作">${html(state.project.preActions.join('\n'))}</textarea></label>
+        ${!M.isText(state.project) ? `<label class="field"><span>开场动作</span><textarea id="preActions" spellcheck="false"
+          aria-label="开场动作">${html(state.project.preActions.join('\n'))}</textarea></label>` : ''}
       </div>`;
       return;
     }
@@ -700,25 +787,7 @@
           <option value="onfield" ${clip.effectPolicy === 'onfield' ? 'selected' : ''}>退场时结束</option></select></label>
         <div class="parameter-origin">基础天赋参数 · 命座与冷却缩减可调整</div>
       </section>` : ''}
-      <section class="inspector-section"><h3>执行</h3>${schedulingControl()}
-        ${M.isProcess(state.project) && clip.followSourceId ? `<label class="checkbox-label"><input type="checkbox" data-property="followSourceId"
-          checked><span>前置技能未执行时跳过</span></label>` : ''}
-        ${M.isProcess(state.project) ? `<label class="field"><span>就绪条件</span><select data-property="readiness" aria-label="就绪条件">
-          <option value="none" ${clip.readiness === 'none' ? 'selected' : ''}>无技能就绪条件</option>
-          <option value="skill" ${clip.readiness === 'skill' ? 'selected' : ''}>E · 战技可用</option>
-          <option value="burst" ${clip.readiness === 'burst' ? 'selected' : ''}>Q · 爆发可用</option>
-        </select></label><label class="field"><span>条件未满足</span><select data-property="notReady" aria-label="条件未满足">
-          <option value="wait" ${clip.notReady === 'wait' ? 'selected' : ''}>等待后执行</option>
-          <option value="skip" ${clip.notReady === 'skip' ? 'selected' : ''}>跳过此步骤</option>
-        </select></label>` : ''}
-        <label class="field"><span>触发条件</span><textarea data-property="condition" aria-label="触发条件" spellcheck="false"
-          placeholder="无额外条件">${html(clip.condition)}</textarea></label>
-        ${clip.abilityId === 'skill' ? `<label class="checkbox-label"><input type="checkbox" data-property="ensureCast"
-          ${clip.ensureCast ? 'checked' : ''}><span>战技冷却检查与重试</span></label>` : ''}
-        ${M.isProcess(state.project) && (clip.abilityId === 'skill' || clip.abilityId === 'combo')
-          ? `<label class="checkbox-label"><input type="checkbox" data-property="protectCast"
-            ${clip.protectCast !== false ? 'checked' : ''}><span>等待已校准的释放锁定</span></label>` : ''}
-      </section>
+      ${executionFields(clip)}
       <details class="advanced-properties"><summary>动作与技能资料</summary>
         <label class="field"><span>动作指令</span><textarea data-property="commandOverride" aria-label="动作指令"
           spellcheck="false">${html(M.commandsFor(clip))}</textarea></label>
@@ -730,6 +799,7 @@
 
   function paint() {
     setSelection(state.selection, state.selected);
+    paintMode();
     const active = document.activeElement;
     const focusProperty = active?.dataset.property;
     const focusOperation = active?.dataset.operationField;
@@ -930,12 +1000,17 @@
     if (property === 'effectMs') return;
     if (property === 'selectionStartMs') {
       const clips = selectedClips();
-      if (clips.length) change(() => M.moveClips(state.project, state.selection, value - clips[0].startMs));
+      if (clips.length) change(() => M.placeClips(state.project, state.selection, value - clips[0].startMs, {ripple: state.ripple}));
       return;
     }
     const clip = selectedClip();
     if (!clip) return;
     change(() => {
+      if (property === 'startMs') {
+        const result = M.placeClips(state.project, [clip.id], value - clip.startMs, {ripple: state.ripple});
+        if (result.blocked) throw new Error('此位置无法容纳当前动作与换人冷却');
+        return;
+      }
       let patch = {[property]: value};
       if (property === 'abilityId') {
         const preset = M.ability(catalog, clip.characterId, value);
@@ -946,8 +1021,8 @@
           castTiming: timing ? M.clone(timing) : null, castEstimateMs: preset.foregroundMs,
           lockOverrideMs: null, castInputMs: null, followSourceId: null, effectSource: 'catalog'};
         Object.assign(patch, {operation: Ops.parameters(value), operations: value === 'combo' ? Ops.template() : [],
-          readiness: M.isProcess(state.project) && ['skill', 'burst'].includes(value) ? value : 'none',
-          notReady: value === 'burst' ? 'skip' : 'wait', ensureCast: M.isProcess(state.project) && value === 'skill',
+          readiness: !M.isText(state.project) && M.isProcess(state.project) && ['skill', 'burst'].includes(value) ? value : 'none',
+          notReady: value === 'burst' ? 'skip' : 'wait', ensureCast: !M.isText(state.project) && M.isProcess(state.project) && value === 'skill',
           protectCast: true});
         if (timing?.lockMs !== null && timing?.lockMs !== undefined) {
           patch.foregroundMs = Math.max(100, timing.lockMs);
@@ -968,6 +1043,9 @@
       if (property === 'hold') patch.commandOverride = null;
       if (clip.followSourceId && ['condition', 'readiness', 'notReady'].includes(property)) patch.followSourceId = null;
       if (property === 'operation') patch.commandOverride = null;
+      if (['txtSkillPolicy', 'protectCast'].includes(property) && clip.abilityId === 'skill'
+        && clip.commandOverride !== null && M.parseCommands(clip.commandOverride).length === 1) patch.commandOverride = null;
+      if (property === 'txtRounds') M.parseRounds(value);
       if (property === 'commandOverride') M.parseCommands(value);
       M.commandsFor({...clip, ...patch});
       M.editClip(state.project, clip.id, patch, state.ripple);
@@ -1187,11 +1265,9 @@
         {anchorId: drag.clipId, stepMs: state.step, thresholdMs: 8 / state.zoom * 1000, markers: [state.playheadMs]})
         : {deltaMs: Math.round(delta / 50) * 50, guideMs: null};
       drag.snapMs = movement.guideMs;
-      if (drag.ids.length > 1) M.moveClips(state.project, drag.ids, movement.deltaMs);
-      else {
-        M.editClip(state.project, drag.clipId, {startMs: drag.startMs + movement.deltaMs}, state.ripple);
-        if (selectedClip().startMs !== drag.startMs + movement.deltaMs) drag.snapMs = null;
-      }
+      const result = M.placeClips(state.project, drag.ids, movement.deltaMs, {ripple: state.ripple});
+      drag.blocked = result.blocked;
+      if (result.deltaMs !== movement.deltaMs) drag.snapMs = null;
     } else if (drag.kind === 'resize' && drag.runId) {
       const step = state.snap ? state.step : 50;
       const endMs = drag.runEndMs + Math.round(delta / step) * step;
@@ -1213,6 +1289,7 @@
     state.drag = null;
     if (drag.moved && drag.before) checkpoint(drag.before);
     if (!drag.moved && drag.collapseSelection) setSelection([drag.clipId]);
+    if (drag.blocked) toast('当前组合的间隔不足以容纳换人冷却，请调整组合内的动作间隔', true);
     $('timelineCanvas').querySelector('.selection-box')?.remove();
     if ($('timelineCanvas').hasPointerCapture(event.pointerId)) $('timelineCanvas').releasePointerCapture(event.pointerId);
     paint();
@@ -1246,11 +1323,15 @@
   }
 
   function exportObject() { return M.exportStrategy(state.project, catalog); }
+  function exportArtifact() { return M.exportDocument(state.project, catalog); }
   function filename(suffix) {
     return (state.project.name.replace(/[\\/:*?"<>|]/g, '-').trim() || '战斗流程') + suffix;
   }
   function downloadJson(value, suffix) {
-    const blob = new Blob([JSON.stringify(value, null, 2)], {type: 'application/json;charset=utf-8'});
+    downloadText(JSON.stringify(value, null, 2), suffix, 'application/json;charset=utf-8');
+  }
+  function downloadText(text, suffix, mime = 'text/plain;charset=utf-8') {
+    const blob = new Blob([text], {type: mime});
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -1261,10 +1342,13 @@
 
   function showJson() {
     try {
-      const strategy = exportObject();
-      $('jsonText').value = JSON.stringify(strategy, null, 2);
-      $('jsonMode').textContent = {process: '按步骤推进', timeline: '按计划时刻', original: '原条件优先'}[executionMode()];
-      $('jsonCount').textContent = `${strategy.Actions.length} 个动作`;
+      const document = exportArtifact();
+      $('jsonText').value = document.text;
+      $('sourceTitle').textContent = `战斗 ${document.format.toUpperCase()}`;
+      $('downloadJson').querySelector('span').textContent = `下载 ${document.format.toUpperCase()}`;
+      $('jsonMode').textContent = document.format === 'txt' ? 'TXT · 顺序命令'
+        : 'JSON · ' + {process: '按步骤推进', timeline: '按计划时刻', original: '条件与优先级'}[executionMode()];
+      $('jsonCount').textContent = `${document.format === 'txt' ? state.project.clips.length : document.strategy.Actions.length} 个动作`;
       $('jsonError').textContent = '';
       $('jsonDialog').showModal();
     } catch (error) {
@@ -1285,7 +1369,7 @@
   }
 
   function loadObject(value) {
-    const project = M.importStrategy(value, catalog);
+    const project = M.importDocument(value, catalog);
     pause();
     change(() => {
       state.project = project;
@@ -1296,7 +1380,7 @@
     });
     $('timelineScroller').scrollLeft = 0;
     window.dispatchEvent(new CustomEvent('combat:project-loaded'));
-    toast(project.scheduling === 'original' ? '已导入，保留原触发条件' : '时间轴工程已打开');
+    toast(M.isText(project) ? 'TXT 策略已打开' : project.scheduling === 'original' ? '已导入，保留原触发条件' : '时间轴工程已打开');
   }
 
   $('characterSearch').addEventListener('input', event => {
@@ -1398,7 +1482,21 @@
   $('inspectorContent').addEventListener('change', event => {
     const input = event.target;
     if (input.readOnly) return;
-    if (input.dataset.operationField) {
+    if (input.id === 'conditionPreset') {
+      const clip = selectedClip();
+      if (!clip || !input.value) return;
+      const join = $('conditionJoin').value;
+      updateClip('condition', !clip.condition.trim() || join === 'replace' ? input.value
+        : `(${clip.condition.trim()}) ${join === 'or' ? '||' : '&&'} (${input.value})`);
+    } else if (input.dataset.priorityField) {
+      const clip = selectedClip();
+      if (!clip) return;
+      const rows = M.clone(M.prioritiesOf(clip)), index = Number(input.dataset.priorityIndex);
+      const key = input.dataset.priorityField, entry = rows[index];
+      for (const field of Object.keys(entry)) if (field.toLowerCase() === key.toLowerCase()) delete entry[field];
+      entry[key] = key === 'Priority' ? Number(input.value) : input.value;
+      updateClip('morePriorities', rows);
+    } else if (input.dataset.operationField) {
       const field = input.dataset.operationField;
       const value = input.type === 'checkbox' ? input.checked : field === 'durationMs' ? M.ms(input.value)
         : ['x', 'y', 'amount'].includes(field) ? Number(input.value) : input.value;
@@ -1416,9 +1514,10 @@
       const value = input.type === 'checkbox' ? input.checked
         : property === 'lockOverrideMs' ? input.value === '' ? null : M.ms(input.value)
         : ['startMs', 'foregroundMs', 'effectMs', 'cooldownMs', 'attackAfterMs', 'selectionStartMs'].includes(property)
-          ? M.ms(input.value) : input.value;
+          ? M.ms(input.value) : property === 'priority' ? Number(input.value) : input.value;
       updateClip(property, value);
     } else if (input.id === 'schedulingMode') setExecutionMode(input.value);
+    else if (input.id === 'txtWaitGaps') change(() => { state.project.txtWaitGaps = input.checked; });
     else if (input.id === 'projectAuthor') change(() => { state.project.author = input.value; });
     else if (input.id === 'preActions') change(() => { state.project.preActions = input.value.split('\n').filter(line => line.trim()); });
   });
@@ -1474,6 +1573,19 @@
     if (state.roleSwitcher && !event.target.closest('#roleSwitcher, [data-role-toggle]')) closeRoleSwitcher();
   });
   document.addEventListener('click', event => {
+    const priorityAdd = event.target.closest('[data-priority-add]');
+    const priorityRemove = event.target.closest('[data-priority-remove]');
+    if ((priorityAdd || priorityRemove) && selectedClip()) {
+      const rows = M.clone(M.prioritiesOf(selectedClip()));
+      if (priorityAdd) {
+        const ability = selectedClip().abilityId;
+        rows.push({Priority: M.priorityOf(selectedClip()) - 1, Expression: 'low-hp()' +
+          (ability === 'skill' ? ' && e-ready()' : ability === 'burst' ? ' && q-ready()' : '')});
+      }
+      else rows.splice(Number(priorityRemove.dataset.priorityRemove), 1);
+      updateClip('morePriorities', rows);
+      return;
+    }
     const roleToggle = event.target.closest('[data-role-toggle]');
     if (roleToggle) { openRoleSwitcher(roleToggle.dataset.roleToggle); return; }
     const quickAdd = event.target.closest('[data-quick-add]');
@@ -1534,7 +1646,8 @@
       editOperations(operations => { operations.splice(0, operations.length, ...rows); });
       return;
     }
-    if (event.target.closest('[data-close-quick]') || !event.target.closest('#quickAddMenu, #mobileAdd')) closeQuickAdd();
+    const withinQuickAdd = event.composedPath().some(node => node.id === 'quickAddMenu' || node.id === 'mobileAdd');
+    if (event.target.closest('[data-close-quick]') || !withinQuickAdd) closeQuickAdd();
     const remove = event.target.closest('[data-remove-character]');
     const duplicate = event.target.closest('[data-duplicate]');
     const deleteButton = event.target.closest('[data-delete]');
@@ -1573,6 +1686,16 @@
   $('snapStep').addEventListener('change', event => { state.step = Number(event.target.value); });
   $('rippleToggle').addEventListener('change', event => { state.ripple = event.target.checked; });
   $('executionMode').addEventListener('change', event => setExecutionMode(event.target.value));
+  $('strategyModeControl').addEventListener('click', event => {
+    const button = event.target.closest('[data-strategy-format]');
+    if (!button || button.getAttribute('aria-pressed') === 'true') return;
+    pause();
+    closeQuickAdd();
+    closeRoleSwitcher();
+    change(() => M.setStrategyFormat(state.project, button.dataset.strategyFormat));
+    toast(M.isText(state.project) ? 'TXT 模式 · JSON 条件保留在工程中' : 'JSON 模式 · 条件设置已恢复');
+    window.dispatchEvent(new CustomEvent('combat:format-changed', {detail: {format: state.project.strategyFormat}}));
+  });
   $('zoom').addEventListener('input', event => updateZoom(Number(event.target.value)));
   $('zoomIn').addEventListener('click', () => updateZoom(state.zoom + 12));
   $('zoomOut').addEventListener('click', () => updateZoom(state.zoom - 12));
@@ -1637,11 +1760,17 @@
   });
   $('newProject').addEventListener('click', () => $('newDialog').showModal());
   $('createEmpty').addEventListener('click', () => {
-    loadObject({...M.emptyProject(), name: $('newName').value.trim() || '新的战斗流程'});
+    const format = $('newFormat').value;
+    const project = {...M.emptyProject(), name: $('newName').value.trim() || '新的战斗流程'};
+    if (format === 'txt') M.setStrategyFormat(project, 'txt');
+    else project.scheduling = 'original';
+    loadObject(project);
     $('newDialog').close();
   });
   $('createDemo').addEventListener('click', () => {
-    loadObject(M.demoProject(catalog));
+    const format = $('newFormat').value, project = M.demoProject(catalog);
+    if (format === 'txt') M.setStrategyFormat(project, 'txt');
+    loadObject(project);
     $('newDialog').close();
   });
   $('saveProject').addEventListener('click', () => {
@@ -1655,36 +1784,43 @@
   $('importInput').addEventListener('change', async event => {
     const file = event.target.files[0];
     if (!file) return;
-    try { loadObject(JSON.parse(await file.text())); }
+    try {
+      const project = M.importDocument(await file.text(), catalog, {name: file.name.replace(/\.[^.]+$/, '')});
+      loadObject(project);
+    }
     catch (error) { toast(error.message, true); }
   });
   $('showJson').addEventListener('click', showJson);
   $('exportStrategy').addEventListener('click', () => {
-    try { downloadJson(exportObject(), '.json'); toast('战斗 JSON 已导出'); }
+    try {
+      const document = exportArtifact();
+      downloadText(document.text, document.extension, document.mime);
+      toast(`战斗 ${document.format.toUpperCase()} 已导出`);
+    }
     catch (error) { toast(error.message, true); }
   });
   $('downloadJson').addEventListener('click', () => {
     try {
-      const value = JSON.parse($('jsonText').value);
-      M.importStrategy(value, catalog);
-      downloadJson(value, '.json');
+      const text = $('jsonText').value;
+      const project = M.importDocument(text, catalog);
+      if (M.isText(project)) downloadText(text, '.txt');
+      else downloadText(text, '.json', 'application/json;charset=utf-8');
     } catch (error) { $('jsonError').textContent = error.message; }
   });
   $('applyJson').addEventListener('click', () => {
     try {
-      const value = JSON.parse($('jsonText').value);
-      loadObject(value);
+      loadObject($('jsonText').value);
       $('jsonDialog').close();
     } catch (error) { $('jsonError').textContent = error.message; }
   });
   $('copyJson').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText($('jsonText').value);
-      toast('JSON 已复制');
+      toast('策略源码已复制');
     } catch {
       $('jsonText').focus();
       $('jsonText').select();
-      toast('已选中 JSON');
+      toast('已选中策略源码');
     }
   });
   document.addEventListener('keydown', event => {
@@ -1775,7 +1911,7 @@
     paint(); persist();
   }
   window.combatEditor = {apiVersion: 1, state, model: M, catalog, paint, loadObject, addCharacter, updateClip,
-    selectClip, exportObject, notify: toast, setDraftKey,
+    selectClip, exportObject, exportArtifact, notify: toast, setDraftKey,
     getProject() { return M.clone(state.project); },
     setOwnedOnly(value) { state.ownedOnly = Boolean(value); paint(); },
     setRoster(record, ownedOnly = true) {

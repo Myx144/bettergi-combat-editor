@@ -6,14 +6,15 @@
   <meta name="color-scheme" content="light">
   <title>战斗时间轴 · BetterGI Combat Editor</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="editor.css?v=combat-open-20261018">
+  <link rel="stylesheet" href="editor.css?v=combat-formats-20261018">
   <script src="vendor/lucide.min.js" defer></script>
   <script src="catalog.js" defer></script>
   <script src="cast-timings.js" defer></script>
-  <script src="operations.js?v=combat-process-20261014" defer></script>
-  <script src="roles.js?v=combat-roles-20261016" defer></script>
-  <script src="model.js?v=combat-roles-20261016" defer></script>
-  <script src="editor.js?v=combat-open-20261018" defer></script>
+  <script src="operations.js?v=combat-formats-20261018" defer></script>
+  <script src="strategy-formats.js?v=combat-formats-20261018" defer></script>
+  <script src="roles.js?v=combat-formats-20261018" defer></script>
+  <script src="model.js?v=combat-formats-20261018" defer></script>
+  <script src="editor.js?v=combat-formats-20261018" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -21,15 +22,19 @@
       <span class="brand-mark"><i data-lucide="clapperboard"></i></span>
       <div><h1>战斗时间轴</h1><span class="brand-caption">BetterGI Combat Editor</span></div>
     </div>
+    <div id="strategyModeControl" class="segmented strategy-mode" role="group" aria-label="战斗策略格式">
+      <button type="button" data-strategy-format="txt" aria-pressed="false" title="TXT 顺序命令策略">TXT</button>
+      <button type="button" data-strategy-format="json" class="selected" aria-pressed="true" title="JSON 条件与优先级策略">JSON</button>
+    </div>
     <div class="project-heading" id="projectHeading">
       <input id="projectName" aria-label="工程名称" maxlength="80" autocomplete="off">
       <span id="saveState" class="save-state">本地草稿</span>
     </div>
     <nav class="document-actions" aria-label="工程">
       <button class="icon-button" id="newProject" type="button" title="新建工程" aria-label="新建工程"><i data-lucide="file-plus-2"></i></button>
-      <button class="icon-button" id="importProject" type="button" title="打开工程或战斗 JSON" aria-label="打开工程或战斗 JSON"><i data-lucide="folder-open"></i></button>
+      <button class="icon-button" id="importProject" type="button" title="打开工程、TXT 或 JSON 策略" aria-label="打开工程、TXT 或 JSON 策略"><i data-lucide="folder-open"></i></button>
       <button class="icon-button" id="saveProject" type="button" title="保存工程文件" aria-label="保存工程文件"><i data-lucide="save"></i></button>
-      <button class="icon-button" id="showJson" type="button" title="查看 JSON" aria-label="查看 JSON"><i data-lucide="braces"></i></button>
+      <button class="icon-button" id="showJson" type="button" title="查看策略源码" aria-label="查看策略源码"><i data-lucide="code-xml"></i></button>
       <button class="export-button" id="exportStrategy" type="button"><i data-lucide="download"></i><span>导出战斗 JSON</span></button>
     </nav>
   </header>
@@ -48,7 +53,7 @@
       <select id="executionMode" aria-label="执行方式">
         <option value="process">按步骤推进</option>
         <option value="timeline">按计划时刻</option>
-        <option value="original">原条件优先</option>
+        <option value="original">条件与优先级</option>
       </select>
     </div>
     <div class="toolbar-group zoom-group">
@@ -81,7 +86,7 @@
 
     <section class="workspace" aria-label="战斗排轴">
       <section class="mobile-preview" id="mobilePreview" aria-label="当前动作">
-        <div class="mobile-preview-heading"><div id="mobileProjectSlot"></div><div id="mobileModeSlot"></div></div>
+        <div class="mobile-preview-heading"><div id="mobileProjectSlot"></div><div class="mobile-strategy-controls"><div id="mobileFormatSlot"></div><div id="mobileModeSlot"></div></div></div>
         <div class="mobile-preview-identity" id="mobilePreviewIdentity"></div>
       </section>
       <header class="transport">
@@ -94,7 +99,7 @@
         </div>
         <div id="mobileHistory" class="mobile-history"><div id="mobileUndoSlot"></div><div id="mobileRedoSlot"></div></div>
         <div class="loop-controls">
-          <label class="checkbox-label"><input id="repeatToggle" type="checkbox" checked><span>循环</span></label>
+          <label class="checkbox-label"><input id="repeatToggle" type="checkbox" checked><span id="repeatLabel">循环</span></label>
           <label class="duration-field"><input id="loopDuration" type="number" min="1" step="0.1" aria-label="循环长度"><span id="durationLabel">秒</span></label>
           <button id="fitLoop" class="icon-button" type="button" title="按冷却整理排轴" aria-label="按冷却整理排轴"><i data-lucide="list-restart"></i><span class="mobile-tool-label">整理</span></button>
         </div>
@@ -110,7 +115,7 @@
         <div id="timelineCanvas" class="timeline-canvas" tabindex="0" aria-label="战斗时间轴"></div>
       </div>
       <footer class="sequence-overview">
-        <div class="sequence-heading"><i data-lucide="list-video"></i><span>动作顺序</span></div>
+        <div class="sequence-heading"><i data-lucide="list-video"></i><span id="sequenceLabel">动作顺序</span></div>
         <div id="sequenceList" class="sequence-list"></div>
       </footer>
     </section>
@@ -146,12 +151,12 @@
   <div id="toast" class="toast" role="status" hidden></div>
   <div id="quickAddMenu" class="quick-add-menu" role="dialog" aria-label="快速添加动作" hidden></div>
   <aside id="roleSwitcher" class="role-switcher" role="dialog" aria-label="角色定位与兼容分支" hidden></aside>
-  <input id="importInput" type="file" accept=".json,application/json" hidden>
+  <input id="importInput" type="file" accept=".json,.txt,application/json,text/plain" hidden>
 
   <dialog id="jsonDialog" class="json-dialog">
-    <header class="dialog-heading"><h2>战斗 JSON</h2><button class="icon-button" type="button" data-close-dialog="jsonDialog" aria-label="关闭 JSON"><i data-lucide="x"></i></button></header>
+    <header class="dialog-heading"><h2 id="sourceTitle">战斗 JSON</h2><button class="icon-button" type="button" data-close-dialog="jsonDialog" aria-label="关闭策略源码"><i data-lucide="x"></i></button></header>
     <div class="json-meta"><span id="jsonMode"></span><span id="jsonCount"></span></div>
-    <textarea id="jsonText" spellcheck="false" aria-label="战斗 JSON 源码"></textarea>
+    <textarea id="jsonText" spellcheck="false" aria-label="战斗策略源码"></textarea>
     <p id="jsonError" class="form-error" role="alert"></p>
     <footer class="dialog-actions">
       <button id="copyJson" type="button"><i data-lucide="copy"></i><span>复制</span></button>
@@ -167,6 +172,9 @@
   <dialog id="newDialog" class="new-dialog">
     <header class="dialog-heading"><h2>新建工程</h2><button class="icon-button" type="button" data-close-dialog="newDialog" aria-label="关闭新建工程"><i data-lucide="x"></i></button></header>
     <label class="field"><span>工程名称</span><input id="newName" value="新的战斗流程" maxlength="80"></label>
+    <label class="field"><span>战斗策略格式</span><select id="newFormat" aria-label="新工程策略格式">
+      <option value="txt">TXT · 顺序命令</option><option value="json">JSON · 条件与优先级</option>
+    </select></label>
     <div class="new-options">
       <button id="createEmpty" type="button"><i data-lucide="file-plus-2"></i><span>空白工程</span></button>
       <button id="createDemo" type="button"><i data-lucide="users-round"></i><span>雷国示例</span></button>

@@ -6,6 +6,8 @@
     ? require('./cast-timings.js') : root.CombatCastTimings;
   const operations = typeof module === 'object' && module.exports
     ? require('./operations.js') : root.CombatOperations;
+  const createFormats = typeof module === 'object' && module.exports
+    ? require('./strategy-formats.js') : root.CombatFormatFactory;
   let roleTools;
   const clone = value => JSON.parse(JSON.stringify(value));
   const seconds = value => Number((value / 1000).toFixed(3));
@@ -14,7 +16,7 @@
   const castLockMs = clip => Number.isFinite(clip.lockOverrideMs)
     ? clip.lockOverrideMs : clip.castTiming?.lockMs ?? null;
   const isCast = clip => ['skill', 'burst'].includes(clip.abilityId);
-  const isFixedAction = clip => isCast(clip) || ['combo', 'jump', 'keypress', 'moveby'].includes(clip.abilityId);
+  const isFixedAction = clip => isCast(clip) || ['combo', 'jump', 'keypress', 'moveby', 'ready', 'check'].includes(clip.abilityId);
   function operationDurationMs(clip) {
     if (clip.abilityId === 'combo' && clip.commandOverride === null) {
       try {
@@ -66,7 +68,10 @@
     return [...character(catalog, characterId).skills, ...operations.definitions];
   }
 
+  const isText = project => project.strategyFormat === 'txt';
   const isProcess = project => project.scheduling === 'sequence' && project.execution === 'process';
+  const priorityOf = clip => clip.priority ?? read(clip.sourceAction, 'Index', Math.max(0, Math.ceil(clip.order) - 1));
+  const prioritiesOf = clip => clip.morePriorities ?? read(clip.sourceAction, 'MorePriorities', []);
 
   function timingVariants(characterId, abilityId) {
     return (castTimings?.characters?.[String(characterId)] || []).filter(entry => entry.abilityId === abilityId);
@@ -79,7 +84,8 @@
   function emptyProject() {
     return {format: 'betterbgi-combat-timeline', version: 1, name: '未命名战斗流程', author: '',
       durationMs: 24000, repeat: true, scheduling: 'sequence', execution: 'process', team: [], clips: [], nextId: 1,
-      preActions: [], sourceInfo: {}, sourceRoot: {}, roleSlots: []};
+      preActions: [], sourceInfo: {}, sourceRoot: {}, roleSlots: [], strategyFormat: 'json',
+      txtWaitGaps: false};
   }
 
   function makeClip(project, catalog, characterId, abilityId = 'skill', startMs = 0) {
@@ -92,12 +98,19 @@
       effectMs: preset.effectMs, cooldownMs: preset.cooldownMs, effectPolicy: preset.effectPolicy,
       castTiming: timing ? clone(timing) : null, castEstimateMs: preset.foregroundMs,
       lockOverrideMs: null, castInputMs: null, followSourceId: null, effectSource: 'catalog',
-      hold: false, followAttack: false, attackAfterMs: 0, ensureCast: isProcess(project) && abilityId === 'skill', condition: '',
-      readiness: isProcess(project) && ['skill', 'burst'].includes(abilityId) ? abilityId : 'none',
+      hold: false, followAttack: false, attackAfterMs: 0, ensureCast: !isText(project) && isProcess(project) && abilityId === 'skill',
+      condition: !isText(project) && project.scheduling === 'original'
+        ? abilityId === 'skill' ? 'e-ready()' : abilityId === 'burst' ? 'q-ready()' : '' : '',
+      readiness: !isText(project) && isProcess(project) && ['skill', 'burst'].includes(abilityId) ? abilityId : 'none',
       notReady: abilityId === 'burst' ? 'skip' : 'wait', protectCast: true,
+      txtSkillPolicy: 'direct', txtRounds: '', txtReady: false,
       operation: operations.parameters(abilityId), operations: abilityId === 'combo' ? operations.template() : [],
       sourceAction: null, commandOverride: null};
     if (abilityId === 'combo') clip.foregroundMs = operationDurationMs(clip);
+    if (!isText(project) && project.scheduling === 'original') {
+      clip.priority = isCast(clip)
+        ? Math.max(-1, ...project.clips.filter(isCast).map(priorityOf)) + 1 : 1000 + number;
+    }
     return clip;
   }
 
@@ -105,7 +118,7 @@
     if (!project.team.includes(String(characterId))) {
       if ((project.roleSlots || []).some(slot => slot.candidates.some(candidate =>
         candidate.characterId === String(characterId)))) throw new Error('该角色已属于兼容定位，请在角色轴旁切换');
-      if (project.team.length >= 4) throw new Error('队伍最多包含 4 名角色');
+      if (!isText(project) && project.scheduling !== 'original' && project.team.length >= 4) throw new Error('队伍最多包含 4 名角色');
       project.team.push(String(characterId));
     }
     const clip = makeClip(project, catalog, characterId, abilityId, startMs);
@@ -274,6 +287,87 @@
       project.repeat ? minimumLoopMs(project) : 0);
   }
 
+  function placementState(rows) {
+    const state = {previous: null, releaseEnd: 0, lastSwitch: null};
+    for (const clip of rows) advancePlacement(state, clip);
+    return state;
+  }
+
+  function earliestPlacement(state, clip) {
+    const previous = state.previous;
+    if (!previous) return 0;
+    const changing = previous.characterId !== clip.characterId;
+    return Math.max(changing ? endOf(previous)
+      : Math.max(actionEndOf(previous), previous.startMs + minimumForegroundMs(previous)),
+    changing ? state.releaseEnd : 0,
+    changing && state.lastSwitch !== null ? state.lastSwitch + SWITCH_COOLDOWN_MS : 0);
+  }
+
+  function advancePlacement(state, clip) {
+    if (state.previous?.characterId !== clip.characterId) {
+      if (state.previous) state.lastSwitch = clip.startMs;
+      state.releaseEnd = 0;
+    }
+    state.previous = clip;
+    state.releaseEnd = Math.max(state.releaseEnd, swapEndOf(clip));
+  }
+
+  // A selection is inserted as one unit. Its internal offsets never depend on
+  // which member received the pointer; only unselected successors may ripple.
+  function placeClips(project, clipIds, deltaMs, {ripple = true} = {}) {
+    const ids = new Set(clipIds), rows = ordered(project);
+    const selected = rows.filter(clip => ids.has(clip.id));
+    if (!selected.length) return {deltaMs: 0, blocked: false};
+    const first = selected[0], oldStart = first.startMs;
+    const rest = rows.filter(clip => !ids.has(clip.id));
+    const requested = Math.max(0, Math.round(oldStart + deltaMs));
+    if (requested === oldStart) return {deltaMs: 0, blocked: false};
+    const desiredIndex = rest.findIndex(clip =>
+      clip.startMs > requested || clip.startMs === requested && deltaMs < 0);
+    const insertion = desiredIndex < 0 ? rest.length : desiredIndex;
+    const candidates = [];
+    for (let index = 0; index <= rest.length; index++) {
+      if (ripple && index !== insertion) continue;
+      const prefix = rest.slice(0, index), suffix = rest.slice(index);
+      const minimum = earliestPlacement(placementState(prefix), first);
+      let start = Math.max(minimum, requested);
+      const preview = at => {
+        const state = placementState(prefix);
+        for (const clip of selected) {
+          const moved = {...clip, startMs: clip.startMs + at - oldStart};
+          if (moved.startMs < earliestPlacement(state, moved)) return null;
+          advancePlacement(state, moved);
+        }
+        return state;
+      };
+      let state = preview(start);
+      if (!state) continue;
+      if (!ripple && suffix.length) {
+        const overflow = earliestPlacement(state, suffix[0]) - suffix[0].startMs;
+        if (overflow > 0) { start -= overflow; state = preview(start); }
+      }
+      if (!state || start < minimum || start < 0 || !Number.isFinite(start)
+        || !ripple && suffix.length && earliestPlacement(state, suffix[0]) > suffix[0].startMs) continue;
+      candidates.push({index, delta: start - oldStart, distance: Math.abs(start - requested)});
+    }
+    candidates.sort((a, b) => a.distance - b.distance ||
+      (deltaMs < 0 ? a.index - b.index : b.index - a.index));
+    const candidate = candidates[0];
+    if (!candidate) return {deltaMs: 0, blocked: true};
+    for (const clip of selected) clip.startMs += candidate.delta;
+    const sequence = [...rest.slice(0, candidate.index), ...selected, ...rest.slice(candidate.index)];
+    if (ripple) repairSchedule(project, false, sequence, selected.at(-1).id);
+    else for (let i = 1; i < sequence.length; i++) consumeIdleTime(sequence[i - 1], sequence[i]);
+    for (const clip of project.clips) {
+      const parent = project.clips.find(item => item.id === clip.followSourceId);
+      if (clip.followSourceId && (!parent || parent.characterId !== clip.characterId
+        || clip.startMs < actionEndOf(parent))) clip.followSourceId = null;
+    }
+    project.durationMs = Math.max(project.durationMs, ...project.clips.map(endOf),
+      project.repeat ? minimumLoopMs(project) : 0);
+    return {deltaMs: candidate.delta, blocked: false};
+  }
+
   function snapMove(project, clipIds, deltaMs, {anchorId, stepMs = 100, thresholdMs = 0, markers = []} = {}) {
     const ids = new Set(clipIds);
     const clips = ordered(project).filter(clip => ids.has(clip.id));
@@ -284,17 +378,30 @@
     const gridDelta = Math.max(minimumDelta, snap(anchor.startMs + deltaMs, stepMs) - anchor.startMs);
     const busyEnd = clip => Math.max(actionEndOf(clip), clip.startMs + minimumForegroundMs(clip));
     let closest = null;
-    const consider = (edgeMs, targetMs) => {
+    const consider = (edgeMs, targetMs, guideMs = targetMs) => {
       const delta = targetMs - edgeMs;
       const distance = Math.abs(delta - deltaMs);
       if (delta >= minimumDelta && distance <= thresholdMs && (!closest || distance < closest.distance)) {
-        closest = {deltaMs: delta, guideMs: targetMs, distance};
+        closest = {deltaMs: delta, guideMs, distance};
       }
     };
-    for (const clip of project.clips.filter(clip => !ids.has(clip.id))) {
-      consider(first.startMs, clip.characterId === first.characterId ? busyEnd(clip) : endOf(clip));
-      consider(clip.characterId === last.characterId ? busyEnd(last) : endOf(last), clip.startMs);
-    }
+    const rest = ordered(project).filter(clip => !ids.has(clip.id));
+    const proposed = Math.max(0, first.startMs + deltaMs);
+    let index = rest.findIndex(clip => clip.startMs > proposed || clip.startMs === proposed && deltaMs < 0);
+    if (index < 0) index = rest.length;
+    const previous = rest[index - 1], next = rest[index];
+    const entry = earliestPlacement(placementState(rest.slice(0, index)), first);
+    const leading = () => { if (previous) consider(first.startMs, entry); };
+    const trailing = () => {
+      if (!next) return;
+      const tail = next.characterId === last.characterId ? busyEnd(last) : endOf(last);
+      let shift = next.startMs - tail;
+      const state = placementState(rest.slice(0, index));
+      for (const clip of clips) advancePlacement(state, {...clip, startMs: clip.startMs + shift});
+      shift -= Math.max(0, earliestPlacement(state, next) - next.startMs);
+      if (first.startMs + shift >= entry) consider(first.startMs, first.startMs + shift, next.startMs);
+    };
+    if (deltaMs < 0) { leading(); trailing(); } else { trailing(); leading(); }
     for (const marker of new Set([0, project.durationMs, ...markers])) {
       consider(first.startMs, marker);
       consider(busyEnd(last), marker);
@@ -404,16 +511,22 @@
     const rows = ordered(project);
     const issue = (code, message, clips = []) => issues.push({code, message, clipIds: clips.map(c => c.id)});
     if (!rows.length) issue('empty', '时间轴中还没有技能片段');
-    if (project.team.length > 4) issue('team', '队伍最多包含 4 名角色');
+    if (!isText(project) && project.scheduling !== 'original' && project.team.length > 4) issue('team', '队伍最多包含 4 名角色');
     const names = new Set();
     for (const clip of rows) {
       if (!project.team.includes(clip.characterId)) issue('team', '片段所属角色不在队伍中', [clip]);
-      if (!/^[\p{L}][\p{L}\p{N}-]*$/u.test(clip.name) || /^(true|false)$/i.test(clip.name)
+      if (!isText(project) && (!/^[\p{L}][\p{L}\p{N}-]*$/u.test(clip.name) || /^(true|false)$/i.test(clip.name)
         || ['t', 'count', 'since', 'min', 'max', 'e-ready', 'q-ready', 'onfield', 'e-cd', 'low-hp',
-          'last-exec', 'battle-time', 'in-party', 'last-check'].includes(clip.name.toLowerCase())) {
+          'last-exec', 'battle-time', 'in-party', 'last-check'].includes(clip.name.toLowerCase()))) {
         issue('name', '片段名称需以文字开头，只能包含文字、数字或连字符', [clip]);
       }
-      if (project.scheduling === 'sequence' && names.has(clip.name.toLowerCase())) issue('name', '片段名称不能重复', [clip]);
+      if (!isText(project) && project.scheduling === 'sequence' && names.has(clip.name.toLowerCase())) issue('name', '片段名称不能重复', [clip]);
+      if (!isText(project) && (!Number.isInteger(priorityOf(clip))
+        || !Array.isArray(prioritiesOf(clip)) || prioritiesOf(clip).some(priority =>
+          !Number.isInteger(read(priority, 'Priority', 0))
+          || typeof read(priority, 'Expression', null) !== 'string'))) {
+        issue('priority', '优先级需要整数，替代条件需要有效表达式', [clip]);
+      }
       names.add(clip.name.toLowerCase());
       if (!['none', 'skill', 'burst'].includes(clip.readiness ?? 'none')
         || !['wait', 'skip'].includes(clip.notReady ?? 'wait')) issue('condition', '技能就绪规则无效', [clip]);
@@ -497,6 +610,23 @@
         if (['cooldown', 'cooldown-loop'].includes(item.code)) {
           item.severity = 'warning';
           item.message += '（参考排布；按步骤执行时请以就绪条件为准）';
+        }
+      }
+    }
+    if (!isText(project) && project.scheduling === 'original') {
+      for (const item of issues) {
+        if (['overlap', 'cooldown', 'cooldown-loop', 'switch', 'switch-loop', 'cast-lock'].includes(item.code)) {
+          item.severity = 'warning';
+          item.message += '（条件策略的时间位置仅供参考）';
+        }
+      }
+    }
+    if (isText(project)) {
+      for (const clip of rows) {
+        try { api.parseRounds(clip.txtRounds || ''); }
+        catch (error) { issue('round', error.message, [clip]); }
+        if (!['direct', 'wait', 'fast'].includes(clip.txtSkillPolicy || 'direct')) {
+          issue('command', 'TXT 战技策略无效', [clip]);
         }
       }
     }
@@ -588,7 +718,7 @@
 
   function processActions(project, catalog, rows = ordered(project), {layout = null, owners = null} = {}) {
     const usedNames = new Set(rows.map(clip => clip.name.toLowerCase()));
-    const indexes = new Map(rows.map((clip, index) => [clip.id, read(clip.sourceAction, 'Index', index)]));
+    const indexes = new Map(rows.map((clip, index) => [clip.id, clip.priority ?? read(clip.sourceAction, 'Index', index)]));
     let nextIndex = Math.max(-1, ...indexes.values()) + 1;
     const entries = [], changes = [], clipEntries = new Map();
     let releaseGuards = [];
@@ -705,7 +835,7 @@
       }
       const originalCondition = clone(read(entry.clip?.sourceAction, 'Condition', {}));
       for (const key of Object.keys(originalCondition)) if (/^expression$/i.test(key)) delete originalCondition[key];
-      const priorities = clone(read(entry.clip?.sourceAction, 'MorePriorities', []));
+      const priorities = clone(entry.clip ? prioritiesOf(entry.clip) : []);
       const alternatives = priorities.map(priority => read(priority, 'Expression', ''));
       for (let priorityIndex = 0; priorityIndex < priorities.length; priorityIndex++) {
         const priority = priorities[priorityIndex];
@@ -734,6 +864,7 @@
 
   function exportStrategy(project, catalog, {embedProject = true,
     compilerVersion = roleTools.hasCompatibility(project) ? 4 : 3, check = true} = {}) {
+    if (isText(project)) throw new Error('当前为 TXT 模式，请导出 TXT 战斗策略');
     const issues = validate(project, catalog).filter(issue => issue.severity !== 'warning');
     if (check && issues.length) throw new Error(issues[0].message);
     const rows = ordered(project);
@@ -753,7 +884,7 @@
       if (check && strategy.Actions.length > 800) throw new Error('兼容分支导出超过 800 个动作，请减少兼容角色或动作');
       return strategy;
     }
-    const indices = new Map(rows.map((clip, index) => [clip.id, read(clip.sourceAction, 'Index', index)]));
+    const indices = new Map(rows.map((clip, index) => [clip.id, clip.priority ?? read(clip.sourceAction, 'Index', index)]));
     let switchIndex = Math.max(-1, ...indices.values()) + 1;
     const usedNames = new Set(rows.map(clip => clip.name));
     const entries = [];
@@ -802,7 +933,7 @@
       const originalCondition = clone(read(clip.sourceAction, 'Condition', {}));
       for (const key of Object.keys(originalCondition)) if (/^expression$/i.test(key)) delete originalCondition[key];
       const expression = project.scheduling === 'original' ? clip.condition : sequenceCondition(project, entries, index);
-      const priorities = clone(read(clip.sourceAction, 'MorePriorities', []));
+      const priorities = clone(prioritiesOf(clip));
       if (project.scheduling === 'sequence') {
         for (const entry of priorities) {
           const prior = read(entry, 'Expression', '');
@@ -848,10 +979,13 @@
     if (value.format !== 'betterbgi-combat-timeline' || value.version !== 1
       || !Array.isArray(value.team) || !Array.isArray(value.clips)) throw new Error('不是支持的时间轴工程');
     const project = {...emptyProject(), ...clone(value)};
+    if (!['json', 'txt'].includes(project.strategyFormat)) throw new Error('战斗策略格式无效');
+    if (isText(project)) { project.scheduling = 'sequence'; project.execution = 'process'; }
     project.execution = value.execution ?? 'timeline';
     if (!['process', 'timeline'].includes(project.execution)) throw new Error('工程调度方式无效');
     project.team = project.team.map(String);
-    if (project.team.length > 4 || new Set(project.team).size !== project.team.length) throw new Error('队伍配置无效');
+    if ((!isText(project) && project.scheduling !== 'original' && project.team.length > 4)
+      || new Set(project.team).size !== project.team.length) throw new Error('队伍配置无效');
     for (const id of project.team) character(catalog, id);
     const ids = new Set();
     for (const clip of project.clips) {
@@ -872,6 +1006,9 @@
       clip.readiness ??= 'none';
       clip.notReady ??= 'wait';
       clip.protectCast ??= true;
+      clip.txtSkillPolicy ??= 'direct';
+      clip.txtRounds ??= '';
+      clip.txtReady ??= false;
       clip.operation ??= operations.parameters(clip.abilityId);
       clip.operations ??= clip.abilityId === 'combo' && clip.commandOverride === null ? operations.template() : [];
       if (clip.castTiming === undefined) {
@@ -895,7 +1032,7 @@
     return separateActions ? separateFollowAttacks(project, catalog) : project;
   }
 
-  function importStrategy(value, catalog) {
+  function importStrategy(value, catalog, {strategyFormat = 'json'} = {}) {
     if (value.format === 'betterbgi-combat-timeline') return normalizeProject(value, catalog);
     const info = read(value, 'Info', {});
     const embedded = read(read(info, 'Config', {}), 'CombatTimeline', null);
@@ -925,6 +1062,7 @@
     const actions = read(value, 'Actions', null);
     if (!Array.isArray(actions) || !actions.length) throw new Error('JSON 中没有战斗动作');
     const project = emptyProject();
+    project.strategyFormat = strategyFormat;
     project.name = read(info, 'Name', '导入的战斗策略');
     project.author = read(info, 'Author', '');
     project.preActions = clone(read(info, 'PreActions', []));
@@ -933,7 +1071,7 @@
     if (sourceConfigKey) delete project.sourceInfo[sourceConfigKey].CombatTimeline;
     project.sourceRoot = clone(value);
     for (const key of Object.keys(project.sourceRoot)) if (/^(info|actions)$/i.test(key)) delete project.sourceRoot[key];
-    project.scheduling = 'original';
+    project.scheduling = strategyFormat === 'txt' ? 'sequence' : 'original';
     project.repeat = false;
     const firstCharacter = actions.map(action => read(action, 'Character', '')).find(name =>
       catalog.characters.some(avatar => avatar.name === name || avatar.aliases.includes(name)));
@@ -944,11 +1082,12 @@
       if (!avatar) throw new Error(`无法识别角色“${rawName || '当前角色'}”，请先在原 JSON 指定角色`);
       const text = read(action, 'Action', '');
       const commands = parseCommands(text);
-      const first = commands.find(command => !['ready', '完成'].includes(command.method));
+      const first = commands.find(command => !['ready', '完成'].includes(command.method)) || commands[0];
       const modes = {e: 'skill', skill: 'skill', q: 'burst', burst: 'burst', attack: 'attack',
         普攻: 'attack', 普通攻击: 'attack', charge: 'charge', 重击: 'charge',
         walk: 'walk', w: 'walk', a: 'walk', s: 'walk', d: 'walk', dash: 'dash', jump: 'jump', j: 'jump',
-        wait: 'wait', after: 'wait', 等待: 'wait', keypress: 'keypress', moveby: 'moveby'};
+        wait: 'wait', after: 'wait', 等待: 'wait', keypress: 'keypress', moveby: 'moveby',
+        ready: 'ready', 完成: 'ready', check: 'check', 检测: 'check'};
       const simple = commands.length === 1 || ['skill', 'burst'].includes(modes[first?.method])
         && commands.slice(1).every(command => ['wait', 'after', 'ready', 'attack'].includes(command.method));
       const mode = simple ? modes[first?.method] || 'combo' : 'combo';
@@ -956,6 +1095,7 @@
       clip.name = read(action, 'Name', '') || clip.name;
       clip.condition = read(read(action, 'Condition', {}), 'Expression', '');
       clip.sourceAction = clone(action);
+      clip.priority = read(action, 'Index', 0);
       clip.commandOverride = text;
       if (mode === 'combo') clip.operations = operations.fromCommands(commands) || [];
       clip.useCurrentCharacter = !read(action, 'Character', '');
@@ -1016,15 +1156,16 @@
   }
 
   const api = {SWITCH_COOLDOWN_MS, clone, seconds, ms, ordered, endOf, snap, character, ability, abilities,
-    operations, isProcess, isFixedAction, operationDurationMs,
+    operations, isText, isProcess, priorityOf, prioritiesOf, isFixedAction, operationDurationMs,
     timingVariants, timingFor, castLockMs, castDurationMs, attackStartMs, actionDurationMs, actionEndOf,
-    minimumForegroundMs, minimumLoopMs, loopReturn, foregroundRuns, resizeForegroundRun, idleIntervals, moveClips, snapMove,
+    minimumForegroundMs, minimumLoopMs, loopReturn, foregroundRuns, resizeForegroundRun, idleIntervals, moveClips, placeClips, snapMove,
     emptyProject, makeClip, addClip, insertAfter, separateFollowAttacks, editClip, removeCharacter, repairSchedule, fitLoop, switches,
     validate, effectEnd, stateAt, commandsFor, sequenceCondition, processActions, exportStrategy, parseCommands,
     importStrategy, normalizeProject, demoProject};
   const createRoles = typeof module === 'object' && module.exports ? require('./roles.js') : root.CombatRoleFactory;
   roleTools = createRoles(api);
   Object.assign(api, roleTools);
+  Object.assign(api, createFormats(api));
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.CombatTimeline = api;
 })(globalThis);
