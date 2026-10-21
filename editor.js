@@ -16,11 +16,12 @@
     search: '', element: '', zoom: 48, snap: true, step: 100, ripple: true, playing: false,
     playheadMs: 0, cycle: 1, speed: 1, hasLooped: false, undo: [], redo: [], drag: null,
     draggingCharacter: null, quickAdd: null, toastTimer: null, lastFrame: null,
-    roster: null, ownedOnly: false, roleSwitcher: null, nativeTrackChoices: {}, nativeExpandedGroups: []};
+    roster: null, ownedOnly: false, roleSwitcher: null, nativeTrackChoices: {}, nativeExpandedGroups: [],
+    playerTrackOrder: {}};
   const mobileLayout = matchMedia('(max-width: 710px)');
   const mobileControls = [
     ['projectHeading', 'mobileProjectSlot'], ['strategyModeControl', 'mobileFormatSlot'], ['executionMode', 'mobileModeSlot'],
-    ['teamControls', 'mobileTeamSlot'],
+    ['multiplayerControls', 'mobileMultiplayerSlot'], ['teamControls', 'mobileTeamSlot'],
     ['libraryToggle', 'mobileLibrarySlot'], ['inspectorToggle', 'mobileInspectorSlot'],
     ['fitLoop', 'mobileFitLoopSlot'], ['undo', 'mobileUndoSlot'], ['redo', 'mobileRedoSlot'],
     ['zoomOut', 'mobileZoomOutSlot'], ['zoom', 'mobileZoomSlot'], ['zoomIn', 'mobileZoomInSlot'],
@@ -50,6 +51,8 @@
     change, icons, toast, getSelected: selectedClip});
   const teamEditor = window.CombatTeamEditor.create({model: M, catalog, getProject: () => state.project,
     change, icons, toast, onSwitch: teamChanged, openQueue: () => ruleEditor.open(null, 'queue')});
+  const multiplayerEditor = window.CombatMultiplayerEditor.create({model: M, catalog, getProject: () => state.project,
+    change, icons, toast, onSwitch: multiplayerChanged, onExportText: showPlayerText});
 
   function icons() { window.lucide?.createIcons(); }
   function avatarHtml(character, className = '') {
@@ -66,7 +69,28 @@
   function selectedClip() { return state.project.clips.find(clip => clip.id === state.selected); }
   function selectedClips() { return M.ordered(state.project).filter(clip => state.selection.includes(clip.id)); }
   function isSelected(id) { return state.selection.includes(id); }
+  function playerLabel(playerId) {
+    if (!playerId) return '各端通用';
+    const player = M.players(state.project).find(item => item.Id === playerId);
+    return player ? `${player.Id}${player.IsHost ? ' · 房主' : ''}` : playerId;
+  }
+  function editingRows(includeShared = false) {
+    const project = state.project;
+    return M.isMultiplayer(project) ? project.clips.filter(clip => (clip.playerId || '') === project.activePlayerId
+      || includeShared && !clip.playerId) : project.clips;
+  }
+  function trackId(characterId, playerId = '') {
+    return M.isMultiplayer(state.project) ? `player-${playerId}-${characterId || 'current'}` : characterId;
+  }
+  function activeReference() {
+    return M.isMultiplayer(state.project) && state.project.activePlayerId
+      ? M.playerSettings(state.project, state.project.activePlayerId) : state.project;
+  }
   function candidateIds() {
+    if (M.isMultiplayer(state.project)) {
+      const names = M.activePlayer(state.project)?.Characters || [];
+      return catalog.characters.filter(character => names.includes(character.name)).map(character => character.id);
+    }
     return !M.isText(state.project) && state.project.scheduling === 'original'
       ? M.nativeTrackGroups(state.project).flatMap(group => group.characterIds) : state.project.team;
   }
@@ -186,6 +210,26 @@
     window.dispatchEvent(new CustomEvent('combat:team-changed'));
   }
 
+  function multiplayerChanged({playerId, configured = false} = {}) {
+    pause();
+    closeQuickAdd();
+    closeRoleSwitcher();
+    state.drag = null;
+    const clip = selectedClip();
+    if (configured) state.playerTrackOrder = {};
+    if (!clip || (clip.playerId || '') !== playerId) {
+      const first = editingRows()[0];
+      setSelection(first ? [first.id] : []);
+    }
+    const player = M.activePlayer(state.project);
+    const avatar = catalog.characters.find(character => player?.Characters.includes(character.name));
+    if (avatar) state.libraryFocus = avatar.id;
+    mobilePreviewKey = null;
+    persist();
+    paint();
+    window.dispatchEvent(new CustomEvent('combat:player-changed', {detail: {playerId}}));
+  }
+
   function paintLibrary() {
     const query = state.search.trim().toLocaleLowerCase();
     const candidates = candidateIds();
@@ -237,6 +281,30 @@
   }
 
   function nativeTrackRows() {
+    if (M.isMultiplayer(state.project)) {
+      const project = state.project;
+      const result = [{id: trackId(null), characterId: null, playerId: '', common: true,
+        label: '各端通用', firstForPlayer: true, group: null}];
+      for (const player of M.players(project)) {
+        const current = project.clips.some(clip => clip.playerId === player.Id && clip.useCurrentCharacter);
+        const members = player.Characters.map(name => catalog.characters.find(character => character.name === name))
+          .filter(Boolean);
+        const order = state.playerTrackOrder[player.Id] || [];
+        members.sort((a, b) => {
+          const left = order.indexOf(a.id), right = order.indexOf(b.id);
+          return (left < 0 ? members.length : left) - (right < 0 ? members.length : right);
+        });
+        const tracks = [
+          ...(current ? [{id: trackId(null, player.Id), characterId: null, playerId: player.Id,
+            common: true, label: '该玩家当前角色', group: null}] : []),
+          ...members.map(character => ({id: trackId(character.id, player.Id), characterId: character.id,
+            playerId: player.Id, group: null}))
+        ];
+        if (tracks[0]) tracks[0].firstForPlayer = true;
+        result.push(...tracks);
+      }
+      return result;
+    }
     const groups = M.nativeTrackGroups(state.project);
     if (!groups.length) return state.project.team.map(id => ({id, characterId: id, group: null}));
     const roster = M.hasTeams(state.project) ? M.activeTeam(state.project).roster : [];
@@ -251,6 +319,12 @@
   }
 
   function revealNativeClip(clip) {
+    if (clip && M.isMultiplayer(state.project)) {
+      M.setActivePlayer(state.project, clip.playerId || '');
+      multiplayerEditor.paint();
+      paintLibrary();
+      return;
+    }
     if (!clip || clip.useCurrentCharacter) return;
     const group = M.nativeTrackGroups(state.project).find(item => item.characterIds.includes(clip.characterId));
     if (group) state.nativeTrackChoices[group.id] = clip.characterId;
@@ -406,7 +480,9 @@
 
   function paintTimeline() {
     const project = state.project;
+    const multiplayer = M.isMultiplayer(project);
     const conditional = !M.isText(project) && project.scheduling === 'original';
+    const independent = conditional || multiplayer;
     const rowHeight = trackHeight(), actionHeight = clipHeight();
     const connectionY = 75 + actionHeight / 2;
     const rows = M.ordered(project);
@@ -429,16 +505,16 @@
     const ruler = `<div class="ruler" data-ruler><div class="ruler-label sticky-label">${icon('layers-3')}<span>角色 / 技能</span></div>
       ${ticks.map(value => `<span class="ruler-tick" style="left:${labelWidth() + value * state.zoom}px">${value}s</span>`).join('')}
       <div class="ruler-playhead" id="rulerPlayhead" aria-hidden="true"></div></div>`;
-    const returnEntry = conditional ? null : M.loopReturn(project);
-    const switchStrip = `<div class="switch-strip"><div class="sticky-label">${conditional ? '条件调度' : '换人冷却'}</div>
-      ${(conditional ? [] : M.switches(project)).map((entry, i, changes) => `<span class="switch-window
+    const returnEntry = independent ? null : M.loopReturn(project);
+    const switchStrip = `<div class="switch-strip"><div class="sticky-label">${multiplayer ? '本端独立调度' : conditional ? '条件调度' : '换人冷却'}</div>
+      ${(independent ? [] : M.switches(project)).map((entry, i, changes) => `<span class="switch-window
         ${i > 0 && entry.startMs - changes[i - 1].startMs < 1000 ? 'invalid' : ''}"
         style="left:${labelWidth() + entry.startMs / 1000 * state.zoom}px;width:${state.zoom}px"
         title="${html(M.character(catalog, entry.characterId).name)} · ${time(entry.startMs)}s">换人</span>`).join('')}
         ${returnEntry ? `<span class="switch-window loop-return-window" data-loop-cooldown
           style="left:${labelWidth() + returnEntry.startMs / 1000 * state.zoom}px;width:${state.zoom}px"
           title="回到${html(M.character(catalog, returnEntry.characterId).name)}，末尾保留 1 秒换人冷却">回切 · 1s</span>` : ''}</div>`;
-    const links = conditional ? [] : rows.flatMap((clip, index) => {
+    const links = independent ? [] : rows.flatMap((clip, index) => {
       const next = rows[index + 1];
       if (next && next.characterId !== clip.characterId) return [{from: clip, to: next, loop: false}];
       if (!next && project.repeat) return [{from: clip, to: rows[0], loop: true}];
@@ -446,12 +522,16 @@
     });
     const nextLink = new Map(links.map(link => [link.from.id, link]));
     const trackRows = nativeTrackRows();
-    const tracks = trackRows.map(({id, characterId, group}, index) => {
-      const common = group && characterId === null;
-      const character = common ? {name: group.name, color: '#7e8c9e'} : M.character(catalog, characterId);
-      const role = common ? {role: 'flex', candidates: []} : M.roleSlot(project, characterId);
+    const tracks = trackRows.map(({id, characterId, group, playerId, common: current, label, firstForPlayer}, index) => {
+      const common = current || group && characterId === null;
+      const character = common ? {name: label || group.name, color: '#7e8c9e'} : M.character(catalog, characterId);
+      const role = common ? {role: 'flex', candidates: []}
+        : M.roleSlot(project, characterId, multiplayer ? {playerId} : undefined);
       const roleName = M.roleDefinitions.find(item => item.id === role.role).name;
-      const clips = rows.filter(clip => group
+      const clips = rows.filter(clip => multiplayer
+        ? (clip.playerId || '') === playerId && (common ? clip.useCurrentCharacter
+          : !clip.useCurrentCharacter && clip.characterId === characterId)
+        : group
         ? common ? clip.useCurrentCharacter : clip.characterId === characterId && !clip.useCurrentCharacter
         : clip.characterId === characterId);
       const renderClip = (clip, run) => {
@@ -500,7 +580,7 @@
           style="left:${left}px;top:${cooldownTop}px;width:${clip.cooldownMs / 1000 * state.zoom}px"
           title="${skill.key} 冷却 ${time(clip.cooldownMs)}s"></div>` : ''}`;
       };
-      const body = conditional ? clips.map(clip => `<div class="onfield-run conditional-run"
+      const body = independent ? clips.map(clip => `<div class="onfield-run conditional-run"
         style="left:${clip.startMs / 1000 * state.zoom}px;width:${M.actionDurationMs(clip) / 1000 * state.zoom}px">
         ${renderClip(clip, {startMs: clip.startMs, clips: [clip]})}</div>`).join('')
         : runs.filter(run => run.characterId === id).map(run => {
@@ -525,34 +605,44 @@
             : `<div class="loop-target run-return-target">${avatarHtml(character)}<span>回切</span></div>`}
         </div>`;
       }).join('');
-      return `<section class="track ${group ? 'native-track' : ''} ${common ? 'native-common-track' : ''} ${clips.some(clip => isSelected(clip.id)) ? 'selected-track' : ''}"
-        data-track="${id}" ${group ? `data-native-track-group="${group.id}"` : ''} style="${css(character)}">
-        <div class="track-label sticky-label" ${common ? '' : `draggable="true" data-team-drag="${id}"`}>
+      const playerHeading = multiplayer && firstForPlayer ? `<div class="player-track-group" data-player-group="${html(playerId)}">
+        <div class="sticky-label"><button type="button" data-select-player="${html(playerId)}"
+          class="${project.activePlayerId === playerId ? 'selected' : ''}" aria-pressed="${project.activePlayerId === playerId}"
+          title="选择${html(playerLabel(playerId))}">${icon(playerId ? 'user-round' : 'network')}
+          <span>${html(playerLabel(playerId))}</span></button></div>
+        <span class="player-track-summary">${playerId ? `${M.players(project).find(player => player.Id === playerId).Characters.length} 个本机角色` : '每端分别执行'}</span>
+        <button type="button" class="icon-button" data-add-current-player="${html(playerId)}"
+          title="添加${html(playerLabel(playerId))}的当前角色动作" aria-label="添加${html(playerLabel(playerId))}的当前角色动作">${icon('plus')}</button></div>` : '';
+      return playerHeading + `<section class="track ${multiplayer ? 'player-track' : ''} ${group ? 'native-track' : ''} ${common ? 'native-common-track' : ''} ${clips.some(clip => isSelected(clip.id)) ? 'selected-track' : ''}"
+        data-track="${id}" ${multiplayer ? `data-player-id="${html(playerId)}" data-track-character="${html(characterId || '')}"` : ''}
+        ${group ? `data-native-track-group="${group.id}"` : ''} style="${css(character)}">
+        <div class="track-label sticky-label" ${common ? '' : `draggable="true" data-team-drag="${characterId}" ${multiplayer ? `data-player-id="${html(playerId)}"` : ''}`}>
           <div class="track-heading">${common ? `<span class="generic-track-avatar">${icon('workflow')}</span>`
-            : `<button class="track-add-source" draggable="true" data-track-avatar="${id}"
+            : `<button class="track-add-source" draggable="true" data-track-avatar="${characterId}" ${multiplayer ? `data-player-id="${html(playerId)}"` : ''}
               type="button" title="拖入${html(character.name)}的技能" aria-label="拖入${html(character.name)}的技能">${avatarHtml(character, 'track-avatar')}</button>`}
             <div class="track-name">${html(character.name)}<span class="track-index">${
-              group ? common ? `${clips.length} 个动作` : `${html(group.name)} · ${group.characterIds.length} 名角色${plan && !plan.roster.includes(id) ? ' · 阵容外动作' : ''}`
+              multiplayer ? common ? `${clips.length} 个动作` : html(playerId)
+              : group ? common ? `${clips.length} 个动作` : `${html(group.name)} · ${group.characterIds.length} 名角色${plan && !plan.roster.includes(id) ? ' · 阵容外动作' : ''}`
               : plan && !plan.roster.includes(id) ? '阵容外动作' : role.candidates.length > 1 || role.role !== 'flex'
                 ? html(roleName) : `角色 ${index + 1}`}</span></div>
             ${!common && relations.has(id) ? `<button type="button" class="icon-button track-shared" data-shared-character="${id}"
               title="${html(character.name)}关联 ${relations.get(id).length} 支队伍" aria-label="查看${html(character.name)}的队伍关联">
               ${icon('link-2')}<span>${relations.get(id).length}</span></button>` : ''}</div>
-          <div class="track-states" data-states="${id}">${conditional ? '<span>参考时长</span>' : ''}</div>
+          <div class="track-states" data-states="${id}">${independent ? '<span>本端参考时长</span>' : ''}</div>
           ${group && !common ? `<button class="icon-button track-role-toggle ${group.characterIds.length > 1 ? 'has-branches' : ''}"
             data-native-group-toggle="${group.id}" data-native-character="${characterId}" type="button"
             aria-expanded="${state.roleSwitcher?.groupId === group.id && state.roleSwitcher.characterId === characterId}"
             aria-controls="roleSwitcher" title="查看${html(group.name)}的候选角色"
             aria-label="展开${html(group.name)}的${group.characterIds.length}名候选角色">${icon('git-fork')}
             ${group.characterIds.length > 1 ? `<span>${group.characterIds.length}</span>` : ''}</button>`
-            : common ? '' : `<button class="icon-button track-role-toggle ${role.candidates.length > 1 ? 'has-branches' : ''}"
+            : common || multiplayer ? '' : `<button class="icon-button track-role-toggle ${role.candidates.length > 1 ? 'has-branches' : ''}"
             data-role-toggle="${id}" type="button" aria-expanded="${state.roleSwitcher?.characterId === id}"
             aria-controls="roleSwitcher" title="${html(character.name)} · 角色定位与兼容分支"
             aria-label="展开${html(character.name)}的兼容分支">${icon('git-fork')}
             ${role.candidates.length > 1 ? `<span>${role.candidates.length}</span>` : ''}</button>`}
-          ${common ? '' : `<button class="icon-button track-add" data-quick-add="${id}" type="button"
+          ${common ? '' : `<button class="icon-button track-add" data-quick-add="${characterId}" ${multiplayer ? `data-player-id="${html(playerId)}"` : ''} type="button"
             title="快速添加${html(character.name)}的技能" aria-label="快速添加${html(character.name)}的技能">${icon('plus')}</button>
-            <button class="icon-button track-remove" data-remove-character="${id}" type="button"
+            <button class="icon-button track-remove" data-remove-character="${characterId}" ${multiplayer ? `data-player-id="${html(playerId)}"` : ''} type="button"
               title="移除${html(character.name)}" aria-label="移除${html(character.name)}">${icon('x')}</button>`}
         </div><div class="track-body">${grid}${body}</div>
       </section>`;
@@ -570,19 +660,20 @@
           data-link-to="${link.to.id}" data-loop-link="${link.loop}" d="M ${x1} ${y1} C ${x1 + 14} ${y1}, ${x2 - 14} ${y2}, ${x2} ${y2}"
           marker-end="url(#switchArrow)"></path>`;
       }).join('')}</svg>`;
-    const loopTarget = !conditional && rows.length && project.repeat && !returnEntry ? `<div class="loop-target"
+    const loopTarget = !independent && rows.length && project.repeat && !returnEntry ? `<div class="loop-target"
       style="left:${labelWidth() + project.durationMs / 1000 * state.zoom}px;top:${connectionY - 17 + project.team.indexOf(rows[0].characterId) * rowHeight}px">
       ${icon('repeat-2')}<span>下一轮</span></div>` : '';
     $('timelineCanvas').innerHTML = ruler + switchStrip + tracks + connections + loopTarget +
-      (!project.team.length ? `<div class="empty-timeline">${icon('users-round')}<span>尚未添加角色</span></div>` : '') +
+      (!project.team.length && !multiplayer ? `<div class="empty-timeline">${icon('users-round')}<span>尚未添加角色</span></div>` : '') +
       `<div class="loop-shade" style="left:${labelWidth() + project.durationMs / 1000 * state.zoom}px;right:0"></div>
       <div class="loop-end" style="left:${labelWidth() + project.durationMs / 1000 * state.zoom}px">
-        <button class="loop-end-handle" data-loop-resize type="button" title="调整循环结束位置" aria-label="调整循环结束位置">${icon('flag')}</button></div>
+        ${multiplayer ? '' : `<button class="loop-end-handle" data-loop-resize type="button" title="调整循环结束位置" aria-label="调整循环结束位置">${icon('flag')}</button>`}</div>
       ${Number.isFinite(state.drag?.snapMs) ? `<div class="snap-guide" data-snap-guide="${state.drag.snapMs}"
         aria-hidden="true" style="left:${labelWidth() + state.drag.snapMs / 1000 * state.zoom}px"></div>` : ''}
       <div class="playhead" id="playhead" style="left:${labelWidth() + state.playheadMs / 1000 * state.zoom}px"></div>`;
-    const overviewRows = conditional ? M.declared(project).sort((a, b) => M.priorityOf(a) - M.priorityOf(b)) : rows;
-    $('sequenceLabel').textContent = conditional ? '主触发' : M.isText(project) ? '命令顺序' : '动作顺序';
+    const visibleRows = multiplayer ? editingRows(true) : rows;
+    const overviewRows = conditional ? M.declared({...project, clips: visibleRows}).sort((a, b) => M.priorityOf(a) - M.priorityOf(b)) : visibleRows;
+    $('sequenceLabel').textContent = multiplayer ? `${playerLabel(project.activePlayerId)} · ${conditional ? '主触发' : '动作'}` : conditional ? '主触发' : M.isText(project) ? '命令顺序' : '动作顺序';
     $('sequenceList').innerHTML = overviewRows.map((clip, index) => {
       const character = M.character(catalog, clip.characterId), skill = selectedAbility(clip);
       return `${index && !conditional ? icon('chevron-right').replace('data-lucide', 'class="sequence-arrow" data-lucide') : ''}
@@ -605,9 +696,13 @@
       : M.isProcess(project) ? 'JSON · 按步骤执行'
         : project.scheduling === 'original' ? 'JSON · 条件策略参考' : 'JSON · 计划时刻预览';
     $('durationLabel').textContent = M.isProcess(project) || project.scheduling === 'original' ? '秒 · 参考' : '秒';
-    $('fitLoop').title = M.isProcess(project) ? '整理动作间隔与换人边界' : '按冷却整理排轴';
-    $('loopDuration').value = M.seconds(project.durationMs);
-    $('repeatToggle').checked = project.repeat;
+    $('fitLoop').title = multiplayer ? `整理${playerLabel(project.activePlayerId)}的参考轴`
+      : M.isProcess(project) ? '整理动作间隔与换人边界' : '按冷却整理排轴';
+    const reference = activeReference();
+    $('loopDuration').value = M.seconds(reference.durationMs);
+    $('repeatToggle').checked = reference.repeat;
+    $('loopDuration').disabled = multiplayer && !project.activePlayerId;
+    $('repeatToggle').disabled = multiplayer && !project.activePlayerId;
     paintPlayhead();
   }
 
@@ -627,15 +722,16 @@
     for (const link of $('timelineCanvas').querySelectorAll('[data-link-from]')) {
       link.classList.toggle('selected', isSelected(link.dataset.linkFrom));
     }
-    $('projectStats').textContent = `${candidateIds().length}${
-      M.isText(state.project) || state.project.scheduling === 'original' ? ' 角色候选' : ' / 4 角色'} · ${state.project.clips.length} 个片段` +
+    $('projectStats').textContent = (M.isMultiplayer(state.project)
+      ? `${M.players(state.project).length} 名玩家 · ${M.players(state.project).reduce((sum, player) => sum + player.Characters.length, 0)} 个角色槽`
+      : `${candidateIds().length}${M.isText(state.project) || state.project.scheduling === 'original' ? ' 角色候选' : ' / 4 角色'}`) + ` · ${state.project.clips.length} 个片段` +
       (state.selection.length > 1 ? ` · 已选 ${state.selection.length} 个` : '');
     paintMobilePreview();
   }
 
   function paintMobilePreview(readout = null) {
     if (!isMobile) return;
-    const rows = M.ordered(state.project);
+    const rows = M.ordered({...state.project, clips: editingRows(true)});
     const clip = state.playing
       ? rows.find(item => item.id === readout?.occupiedClipId) ||
         rows.filter(item => item.startMs <= state.playheadMs).at(-1)
@@ -653,7 +749,7 @@
       preview.style.cssText = css(character);
       preview.innerHTML = `${clip.useCurrentCharacter ? `<span class="generic-avatar">${icon('user-round')}</span>`
         : avatarHtml(character, 'mobile-preview-avatar')}
-        <div class="mobile-preview-text"><strong>${clip.useCurrentCharacter ? '当前前台角色' : html(character.name)} · ${html(skill.name)}</strong>
+        <div class="mobile-preview-text"><strong>${M.isMultiplayer(state.project) ? `${html(playerLabel(clip.playerId))} · ` : ''}${clip.useCurrentCharacter ? '当前前台角色' : html(character.name)} · ${html(skill.name)}</strong>
         <small>动作 ${rows.indexOf(clip) + 1} / ${rows.length} · 参考 ${time(clip.startMs)}s · ${
           pending ? '释放待实测' : `${M.seconds(duration)}s`}${state.selection.length > 1 ? ` · 选中 ${state.selection.length} 项` : ''}</small></div>
         ${skillImage(skill, 'mobile-preview-skill')}`;
@@ -702,7 +798,7 @@
   function setExecutionMode(mode) {
     if (M.isText(state.project)) return;
     change(() => {
-      if (mode !== 'original' && state.project.team.length > 4) throw new Error('步骤编排最多使用 4 个角色，请先调整角色候选');
+      if (mode !== 'original' && !M.isMultiplayer(state.project) && state.project.team.length > 4) throw new Error('步骤编排最多使用 4 个角色，请先调整角色候选');
       state.project.scheduling = mode === 'original' ? 'original' : 'sequence';
       if (mode !== 'original') state.project.execution = mode;
     });
@@ -740,7 +836,8 @@
     </section>`;
     const priorities = M.prioritiesOf(clip), native = state.project.scheduling === 'original';
     const summary = window.CombatConditions.describe(window.CombatConditions.decode(clip.condition,
-      state.project.clips.map(row => row.name)));
+      state.project.clips.filter(row => !M.isMultiplayer(state.project) || !row.playerId
+        || clip.playerId && row.playerId === clip.playerId).map(row => row.name)));
     return `<section class="inspector-section"><h3>JSON 触发条件</h3>${schedulingControl()}
       ${clip.useCurrentCharacter ? '<div class="execution-state">沿用执行器当前角色 · Character 留空</div>' : ''}
       ${native ? `<label class="field"><span>动作优先级 · 数字越小越优先</span><input type="number" step="1"
@@ -783,19 +880,23 @@
 
   function paintMode() {
     const format = M.isText(state.project) ? 'txt' : 'json';
+    const multiplayer = M.isMultiplayer(state.project);
+    document.body.classList.toggle('multiplayer-project', multiplayer);
     for (const button of $('strategyModeControl').querySelectorAll('[data-strategy-format]')) {
       const selected = button.dataset.strategyFormat === format;
       button.classList.toggle('selected', selected);
       button.setAttribute('aria-pressed', String(selected));
     }
     $('executionMode').hidden = format === 'txt';
-    const exportLabel = M.hasTeams(state.project)
+    const exportLabel = M.isMultiplayer(state.project) ? '导出多人 JSON' : M.hasTeams(state.project)
       ? format === 'txt' ? '导出本队 TXT' : '导出合并 JSON' : `导出战斗 ${format.toUpperCase()}`;
     $('exportStrategy').querySelector('span').textContent = exportLabel;
     $('exportStrategy').title = exportLabel;
     $('repeatLabel').textContent = format === 'txt' || state.project.scheduling === 'original' ? '预览循环' : '循环';
     $('newFormat').value = format;
     $('play').title = state.project.scheduling === 'original' ? '播放参考轴' : '播放排轴预览';
+    document.querySelector('.switch-rule').innerHTML = `${icon('timer')}${multiplayer ? '本端' : ''}换人间隔 1 秒`;
+    $('rippleControl').title = multiplayer ? '仅联动同一玩家的后续动作' : '联动后续动作';
   }
 
   function operationInputs(operation, index = null, characterId = null) {
@@ -875,7 +976,7 @@
             const character = M.character(catalog, clip.characterId), skill = selectedAbility(clip);
             return `<button type="button" data-select-single="${clip.id}" class="selection-item">
               ${avatarHtml(character)}<span><strong>${html(character.name)} · ${skill.key}</strong>
-                <small>${time(clip.startMs)}s · ${html(skill.name)}</small></span></button>`;
+                <small>${M.isMultiplayer(state.project) ? `${html(playerLabel(clip.playerId))} · ` : ''}${time(clip.startMs)}s · ${html(skill.name)}</small></span></button>`;
           }).join('')}</div>
         </section>
         <div class="inspector-actions"><button type="button" data-duplicate-selection>${icon('copy-plus')}<span>复制所选</span></button>
@@ -889,7 +990,8 @@
         <h3>${html(state.project.name)}</h3>
         <label class="field"><span>作者</span><input id="projectAuthor" value="${html(state.project.author)}" maxlength="80"></label>
         ${schedulingControl()}
-        ${!M.isText(state.project) ? `<label class="field"><span>${M.hasTeams(state.project) ? '本队开场 · 联合导出需一致' : '开场动作'}</span><textarea id="preActions" spellcheck="false"
+        ${M.isMultiplayer(state.project) ? `<button type="button" data-manage-players>${icon('users-round')}<span>玩家与本端开场</span></button>` : ''}
+        ${!M.isText(state.project) ? `<label class="field"><span>${M.isMultiplayer(state.project) ? '各端通用开场' : M.hasTeams(state.project) ? '本队开场 · 联合导出需一致' : '开场动作'}</span><textarea id="preActions" spellcheck="false"
           aria-label="开场动作">${html(state.project.preActions.join('\n'))}</textarea></label>
           ${M.hasTeams(state.project) ? `<button type="button" data-share-preactions>${icon('copy-check')}<span>沿用本队开场与公共配置</span></button>` : ''}` : ''}
       </div>`;
@@ -902,6 +1004,19 @@
     $('inspectorContent').innerHTML = `<div class="inspector-identity" style="${css(character)}">
       ${clip.useCurrentCharacter ? `<span class="generic-avatar">${icon('user-round')}</span>` : avatarHtml(character)}
       <div><strong>${clip.useCurrentCharacter ? '当前前台角色' : html(character.name)}</strong><small>${html(preset.name)}</small></div></div>
+      ${M.isMultiplayer(state.project) ? `<section class="inspector-section"><h3>执行归属</h3>
+        <label class="field"><span>玩家</span><select data-property="playerId" aria-label="执行玩家">
+          <option value="" ${!clip.playerId ? 'selected' : ''}>各端通用 · 当前角色</option>
+          ${M.players(state.project).map(player => `<option value="${html(player.Id)}" ${clip.playerId === player.Id ? 'selected' : ''}>${html(playerLabel(player.Id))}</option>`).join('')}
+        </select></label>
+        <label class="field"><span>执行角色</span><select data-property="executionCharacter" aria-label="执行角色">
+          <option value="" ${clip.useCurrentCharacter ? 'selected' : ''}>沿用当前角色</option>
+          ${(M.players(state.project).find(player => player.Id === clip.playerId)?.Characters || []).map(name => {
+            const member = catalog.characters.find(avatar => avatar.name === name);
+            return `<option value="${html(member?.id || '')}" ${!clip.useCurrentCharacter && character.name === name ? 'selected' : ''}>${html(name)}</option>`;
+          }).join('')}
+        </select></label>
+      </section>` : ''}
       <section class="inspector-section"><h3>角色动作</h3>
         <label class="field"><span>动作</span><select data-property="abilityId" aria-label="技能">
           <optgroup label="技能">${character.skills.map(skill => `<option value="${skill.id}" ${skill.id === clip.abilityId ? 'selected' : ''}>
@@ -946,6 +1061,8 @@
     setSelection(state.selection, state.selected);
     paintMode();
     teamEditor.paint();
+    $('teamControls').hidden = M.isMultiplayer(state.project);
+    multiplayerEditor.paint();
     const active = document.activeElement;
     const focusProperty = active?.dataset.property;
     const focusOperation = active?.dataset.operationField;
@@ -1000,14 +1117,22 @@
     $('timeReadout').textContent = `${String(Math.floor(totalSeconds / 60)).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}.${fraction}`;
     $('cycleReadout').textContent = `第 ${state.cycle} 轮`;
     const conditional = !M.isText(state.project) && state.project.scheduling === 'original';
-    const readout = conditional
-      ? {timeMs: state.playheadMs, reference: true, foregroundId: null, occupiedClipId: null,
+    const multiplayer = M.isMultiplayer(state.project);
+    const localStates = multiplayer ? M.players(state.project).map(player => ({playerId: player.Id,
+      ...(conditional ? {foregroundId: null, occupiedClipId: null, statuses: player.Characters.map(name => ({
+        characterId: catalog.characters.find(character => character.name === name)?.id, onfield: false, skills: []}))}
+        : M.playerStateAt(state.project, player.Id, state.playheadMs, state.hasLooped))})) : [];
+    const readout = multiplayer ? {timeMs: state.playheadMs, reference: conditional, players: localStates,
+      occupiedClipId: localStates.find(player => player.playerId === state.project.activePlayerId)?.occupiedClipId || null,
+      statuses: localStates.flatMap(player => player.statuses.map(status => ({...status, playerId: player.playerId})))}
+      : conditional ? {timeMs: state.playheadMs, reference: true, foregroundId: null, occupiedClipId: null,
         statuses: state.project.team.map(characterId => ({characterId, onfield: false, skills: []}))}
-      : M.stateAt(state.project, state.playheadMs, state.hasLooped);
+        : M.stateAt(state.project, state.playheadMs, state.hasLooped);
     for (const status of readout.statuses) {
-      const track = $('timelineCanvas').querySelector(`[data-track="${status.characterId}"]`);
+      const id = trackId(status.characterId, status.playerId);
+      const track = $('timelineCanvas').querySelector(`[data-track="${id}"]`);
       track?.classList.toggle('onfield', status.onfield);
-      const counters = $('timelineCanvas').querySelector(`[data-states="${status.characterId}"]`);
+      const counters = $('timelineCanvas').querySelector(`[data-states="${id}"]`);
       if (counters) counters.innerHTML = conditional ? '<span>参考时长</span>' : status.skills.map(skill => `<span class="${skill.effectMs > 0 ? 'active-effect' : ''}">
         ${skill.abilityId === 'skill' ? 'E' : 'Q'} ${skill.cooldownMs > 0 ? `CD ${time(skill.cooldownMs)}s` : '就绪'}
         ${skill.effectMs > 0 ? ` · ${time(skill.effectMs)}s` : ''}</span>`).join('');
@@ -1080,22 +1205,27 @@
 
   function quickInsertionMs(characterId) {
     const clip = selectedClip();
-    if (clip?.characterId === characterId) return M.actionEndOf(clip);
+    if (clip?.characterId === characterId && editingRows().includes(clip)) return M.actionEndOf(clip);
     if (state.playheadMs > 0) return state.playheadMs;
-    return Math.max(0, ...state.project.clips.filter(item => item.characterId === characterId).map(M.endOf));
+    return Math.max(0, ...editingRows().filter(item => item.characterId === characterId).map(M.endOf));
   }
 
-  function openQuickAdd(characterId, at, x, y, tab = 'skills') {
+  function openQuickAdd(characterId, at, x, y, tab = 'skills', scope = null) {
     pause();
     closePanels();
     const character = M.character(catalog, characterId);
     const anchor = selectedClip();
-    const afterId = anchor?.characterId === characterId && Math.abs(at - M.actionEndOf(anchor)) < 1 ? anchor.id : null;
-    state.quickAdd = {characterId, startMs: afterId ? at : snapped(at), afterId, x, y, tab};
+    const playerId = scope?.playerId ?? state.project.activePlayerId ?? '';
+    const currentCharacter = Boolean(scope?.currentCharacter);
+    const afterId = anchor?.characterId === characterId && Math.abs(at - M.actionEndOf(anchor)) < 1
+      && (!M.isMultiplayer(state.project) || (anchor.playerId || '') === playerId
+        && Boolean(anchor.useCurrentCharacter) === currentCharacter) ? anchor.id : null;
+    state.quickAdd = {characterId, startMs: afterId ? at : snapped(at), afterId, x, y, tab,
+      scope: M.isMultiplayer(state.project) ? {playerId, currentCharacter} : null};
     const menu = $('quickAddMenu');
     menu.style.cssText = css(character);
-    menu.innerHTML = `<div class="quick-add-heading">${avatarHtml(character)}
-      <div><strong>${html(character.name)}</strong><small>${time(state.quickAdd.startMs)}s</small></div>
+    menu.innerHTML = `<div class="quick-add-heading">${currentCharacter ? `<span class="generic-track-avatar">${icon('workflow')}</span>` : avatarHtml(character)}
+      <div><strong>${html(currentCharacter ? playerLabel(playerId) : character.name)}</strong><small>${time(state.quickAdd.startMs)}s${M.isMultiplayer(state.project) && !currentCharacter ? ` · ${html(playerId)}` : ''}</small></div>
       <button class="icon-button" data-close-quick type="button" aria-label="关闭快速添加" title="关闭">${icon('x')}</button></div>
       <div class="append-actions quick-common-actions" role="group" aria-label="常用动作">
         <button type="button" data-quick-common="attack">${icon('swords')}<span>普攻</span>${icon('plus')}</button>
@@ -1109,7 +1239,10 @@
         tab === 'combos' ? Ops.templates.map(template => `<button type="button" data-quick-template="${template.id}">
           <span class="quick-skill-icon">${icon('workflow')}</span><span class="quick-skill-name">
             <strong>${html(template.name)}</strong><small>${template.operations.length} 项操作</small></span></button>`).join('')
-          : (tab === 'skills' ? character.skills : Ops.definitions.filter(item => item.id !== 'combo')).map(skill => {
+          : (tab === 'skills' ? currentCharacter ? character.skills.map(skill => ({...skill,
+            name: skill.id === 'skill' ? '元素战技' : skill.id === 'burst' ? '元素爆发' : skill.name,
+            icon: null, iconName: skill.id === 'skill' ? 'zap' : 'sparkles'})) : character.skills
+            : Ops.definitions.filter(item => item.id !== 'combo')).map(skill => {
         const timing = M.timingFor(characterId, skill.id);
         return `<button type="button" data-quick-skill="${skill.id}">
           <span class="quick-skill-icon">${skillImage(skill)}</span><span class="quick-skill-name">
@@ -1150,11 +1283,14 @@
     }
   }
 
-  function addCharacter(id, at = null, mode = state.libraryAbility, templateId = null, afterId = null) {
+  function addCharacter(id, at = null, mode = state.libraryAbility, templateId = null, afterId = null, scope = null) {
     change(() => {
-      const start = at ?? (state.playheadMs > 0 ? state.playheadMs : Math.max(0, ...state.project.clips.map(M.endOf)));
+      if (M.isMultiplayer(state.project) && scope) M.setActivePlayer(state.project, scope.playerId);
+      const start = at ?? (state.playheadMs > 0 ? state.playheadMs : Math.max(0, ...editingRows().map(M.endOf)));
       const clip = afterId ? M.insertAfter(state.project, catalog, afterId, mode, state.ripple)
-        : M.addClip(state.project, catalog, id, mode, snapped(start), state.ripple);
+        : M.isMultiplayer(state.project) && scope?.currentCharacter
+          ? M.addCurrentAction(state.project, catalog, mode, snapped(start), {playerId: scope.playerId, ripple: state.ripple})
+          : M.addClip(state.project, catalog, id, mode, snapped(start), state.ripple);
       if (templateId) {
         const operations = Ops.template(templateId);
         M.editClip(state.project, clip.id, {operations,
@@ -1177,6 +1313,14 @@
     const clip = selectedClip();
     if (!clip) return;
     change(() => {
+      if (M.isMultiplayer(state.project) && ['playerId', 'executionCharacter'].includes(property)) {
+        if (property === 'playerId') M.assignClipPlayer(state.project, clip.id, value,
+          {currentCharacter: !value || clip.useCurrentCharacter});
+        else M.assignClipPlayer(state.project, clip.id, clip.playerId || '',
+          {currentCharacter: !value, ...(value ? {characterId: value} : {})});
+        M.setActivePlayer(state.project, clip.playerId || '');
+        return;
+      }
       if (property === 'startMs') {
         const result = M.placeClips(state.project, [clip.id], value - clip.startMs, {ripple: state.ripple});
         if (result.blocked) throw new Error('此位置无法容纳当前动作与换人冷却');
@@ -1238,7 +1382,9 @@
   }
 
   function assignCopyIndex(copy, count) {
-    const indices = state.project.clips.map(M.priorityOf).filter(Number.isFinite);
+    const pool = state.project.clips.filter(clip => !M.isMultiplayer(state.project)
+      || !clip.playerId || clip.playerId === copy.playerId);
+    const indices = pool.map(M.priorityOf).filter(Number.isFinite);
     const source = M.clone(copy.sourceAction || {});
     for (const key of Object.keys(source)) if (/^index$/i.test(key)) delete source[key];
     source.Index = Math.max(state.project.clips.length + count, ...indices) + 1;
@@ -1249,6 +1395,7 @@
   function duplicateClip(id) {
     const source = state.project.clips.find(clip => clip.id === id);
     change(() => {
+      if (M.isMultiplayer(state.project)) M.setActivePlayer(state.project, source.playerId || '');
       const copied = M.makeClip(state.project, catalog, source.characterId, source.abilityId, M.endOf(source));
       const ownId = copied.id, ownName = copied.name, ownOrder = copied.order;
       Object.assign(copied, M.clone(source), {id: ownId, name: ownName, order: ownOrder,
@@ -1275,6 +1422,7 @@
     change(() => {
       const delta = Math.max(...sources.map(M.endOf)) - sources[0].startMs;
       const copies = sources.map(source => {
+        if (M.isMultiplayer(state.project)) M.setActivePlayer(state.project, source.playerId || '');
         const copy = M.makeClip(state.project, catalog, source.characterId, source.abilityId, source.startMs + delta);
         Object.assign(copy, M.clone(source), {id: copy.id, name: copy.name, order: copy.order,
           declarationOrder: copy.declarationOrder, startMs: source.startMs + delta});
@@ -1345,6 +1493,17 @@
       else if (!wasSelected) setSelection([id]);
       else state.selected = id;
       const clip = state.project.clips.find(item => item.id === id);
+      if (M.isMultiplayer(state.project)) {
+        if (!resize && selectedClips().some(item => (item.playerId || '') !== (clip.playerId || ''))) {
+          toast('不同玩家的片段请分别拖动；每端的动作和切人限制独立计算', true);
+          paintSelection();
+          paintInspector();
+          return;
+        }
+        M.setActivePlayer(state.project, clip.playerId || '');
+        multiplayerEditor.paint();
+        paintLibrary();
+      }
       const run = resize?.dataset.runResize
         ? M.foregroundRuns(state.project).find(item => item.id === resize.dataset.runResize) : null;
       state.drag = {kind: resize ? 'resize' : clipElement && isSelected(id) ? 'move' : 'select',
@@ -1372,7 +1531,7 @@
       state.playheadMs = position(event.clientX);
       paintPlayhead();
       $('timelineCanvas').setPointerCapture(event.pointerId);
-    } else if (!event.target.closest('.ruler, .switch-strip, .loop-target') && event.pointerType !== 'touch') {
+    } else if (!event.target.closest('.ruler, .switch-strip, .loop-target, .player-track-group') && event.pointerType !== 'touch') {
       event.preventDefault();
       pause();
       $('timelineCanvas').focus({preventScroll: true});
@@ -1494,6 +1653,14 @@
 
   function exportObject() { return M.exportStrategy(state.project, catalog); }
   function exportArtifact() { return M.exportDocument(state.project, catalog); }
+  function showPlayerText(playerId = null) {
+    if (!M.isMultiplayer(state.project)) return;
+    $('playerTextTarget').innerHTML = M.players(state.project).map(player =>
+      `<option value="${html(player.Id)}">${html(playerLabel(player.Id))} · ${html(player.Characters.join('、'))}</option>`).join('');
+    const preferred = playerId || state.project.activePlayerId;
+    if (M.players(state.project).some(player => player.Id === preferred)) $('playerTextTarget').value = preferred;
+    if (!$('playerTextDialog').open) $('playerTextDialog').showModal();
+  }
   function filename(suffix) {
     return (state.project.name.replace(/[\\/:*?"<>|]/g, '-').trim() || '战斗流程') + suffix;
   }
@@ -1517,7 +1684,7 @@
       $('sourceTitle').textContent = `战斗 ${document.format.toUpperCase()}`;
       $('downloadJson').querySelector('span').textContent = `下载 ${document.format.toUpperCase()}`;
       $('jsonMode').textContent = document.format === 'txt' ? 'TXT · 顺序命令'
-        : 'JSON · ' + {process: '按步骤推进', timeline: '按计划时刻', original: '条件与优先级'}[executionMode()];
+        : (M.isMultiplayer(state.project) ? '多人 JSON · ' : 'JSON · ') + {process: '按步骤推进', timeline: '按计划时刻', original: '条件与优先级'}[executionMode()];
       $('jsonCount').textContent = `${document.format === 'txt' ? state.project.clips.length : document.strategy.Actions.length} 个动作`;
       $('jsonError').textContent = '';
       $('jsonDialog').showModal();
@@ -1546,6 +1713,7 @@
     closeRoleSwitcher();
     state.nativeTrackChoices = {};
     state.nativeExpandedGroups = [];
+    state.playerTrackOrder = {};
     change(() => {
       state.project = project;
       setSelection(project.clips[0] ? [project.clips[0].id] : []);
@@ -1555,7 +1723,8 @@
     });
     $('timelineScroller').scrollLeft = 0;
     window.dispatchEvent(new CustomEvent('combat:project-loaded'));
-    toast(M.isText(project) ? 'TXT 策略已打开' : project.scheduling === 'original' ? '已导入，保留原触发条件' : '时间轴工程已打开');
+    toast(M.isMultiplayer(project) ? '多人策略已打开，原玩家归属与条件保留'
+      : M.isText(project) ? 'TXT 策略已打开' : project.scheduling === 'original' ? '已导入，保留原触发条件' : '时间轴工程已打开');
   }
 
   $('characterSearch').addEventListener('input', event => {
@@ -1602,7 +1771,7 @@
   $('timelineCanvas').addEventListener('dragstart', event => {
     const avatar = event.target.closest('[data-track-avatar]');
     if (avatar) {
-      state.draggingCharacter = {id: avatar.dataset.trackAvatar, source: 'track'};
+      state.draggingCharacter = {id: avatar.dataset.trackAvatar, source: 'track', playerId: avatar.dataset.playerId};
       event.dataTransfer.setData('application/x-combat-track-character', avatar.dataset.trackAvatar);
       event.dataTransfer.setData('text/plain', avatar.dataset.trackAvatar);
       event.dataTransfer.effectAllowed = 'copy';
@@ -1611,6 +1780,9 @@
     const label = event.target.closest('[data-team-drag]');
     if (!label) return;
     event.dataTransfer.setData('application/x-combat-team', label.dataset.teamDrag);
+    if (M.isMultiplayer(state.project)) {
+      event.dataTransfer.setData('application/x-combat-player', label.dataset.playerId);
+    }
     event.dataTransfer.effectAllowed = 'move';
   });
   $('timelineCanvas').addEventListener('dragover', event => {
@@ -1630,13 +1802,37 @@
     if (!id && !team && !trackCharacter) return;
     event.preventDefault();
     document.querySelector('.drop-marker')?.remove();
+    const targetTrack = event.target.closest('[data-track]');
+    const targetPlayer = M.isMultiplayer(state.project) ? targetTrack?.dataset.playerId
+      ?? state.draggingCharacter?.playerId ?? state.project.activePlayerId : null;
     if (trackCharacter) {
-      openQuickAdd(trackCharacter, position(event.clientX), event.clientX + 8, event.clientY + 8);
+      if (M.isMultiplayer(state.project)) M.setActivePlayer(state.project, targetPlayer);
+      openQuickAdd(trackCharacter, position(event.clientX), event.clientX + 8, event.clientY + 8, 'skills',
+        M.isMultiplayer(state.project) ? {playerId: targetPlayer, currentCharacter: false} : null);
       state.draggingCharacter = null;
     } else if (id) {
-      addCharacter(id, position(event.clientX), state.draggingCharacter?.mode || state.libraryAbility);
+      addCharacter(id, position(event.clientX), state.draggingCharacter?.mode || state.libraryAbility, null, null,
+        M.isMultiplayer(state.project) ? {playerId: targetPlayer, currentCharacter: false} : null);
       state.draggingCharacter = null;
     } else {
+      if (M.isMultiplayer(state.project)) {
+        const fromPlayer = event.dataTransfer.getData('application/x-combat-player');
+        if (fromPlayer !== targetPlayer) {
+          toast('轨道排序不会更改执行玩家；请在动作属性中明确修改归属');
+          return;
+        }
+        const targetCharacter = targetTrack?.dataset.trackCharacter;
+        const player = M.players(state.project).find(item => item.Id === fromPlayer);
+        if (!targetCharacter || !player || targetCharacter === team) return;
+        const list = state.playerTrackOrder[fromPlayer] || player.Characters.map(name =>
+          catalog.characters.find(character => character.name === name)?.id).filter(Boolean);
+        const order = list.filter(value => value !== team);
+        order.splice(order.indexOf(targetCharacter), 0, team);
+        state.playerTrackOrder[fromPlayer] = order;
+        paintTimeline();
+        icons();
+        return;
+      }
       const target = event.target.closest('[data-track]')?.dataset.track;
       if (target && target !== team && state.project.team.includes(target)) change(() => {
         const list = state.project.team.filter(value => value !== team);
@@ -1764,6 +1960,28 @@
     if (state.roleSwitcher && !event.target.closest('#roleSwitcher, [data-role-toggle], [data-native-group-toggle]')) closeRoleSwitcher();
   });
   document.addEventListener('click', event => {
+    const playerSelect = event.target.closest('[data-select-player]');
+    if (playerSelect) {
+      const playerId = playerSelect.dataset.selectPlayer;
+      M.setActivePlayer(state.project, playerId);
+      multiplayerChanged({playerId});
+      return;
+    }
+    if (event.target.closest('[data-manage-players]')) { multiplayerEditor.open(); return; }
+    const currentPlayerAdd = event.target.closest('[data-add-current-player]');
+    if (currentPlayerAdd) {
+      const playerId = currentPlayerAdd.dataset.addCurrentPlayer;
+      M.setActivePlayer(state.project, playerId);
+      multiplayerEditor.paint();
+      persist();
+      const player = M.activePlayer(state.project);
+      const character = catalog.characters.find(avatar => player?.Characters.includes(avatar.name))
+        || M.character(catalog, state.project.team[0] || catalog.characters[0].id);
+      const at = state.playheadMs || Math.max(0, ...editingRows().map(M.endOf));
+      const rect = currentPlayerAdd.getBoundingClientRect();
+      openQuickAdd(character.id, at, rect.right + 7, rect.top, 'operations', {playerId, currentCharacter: true});
+      return;
+    }
     const priorityAdd = event.target.closest('[data-priority-add]');
     const priorityRemove = event.target.closest('[data-priority-remove]');
     if ((priorityAdd || priorityRemove) && selectedClip()) {
@@ -1795,37 +2013,44 @@
     const quickTab = event.target.closest('[data-quick-tab]');
     const quickTemplate = event.target.closest('[data-quick-template]');
     if (quickTab && state.quickAdd) {
-      const {characterId, startMs, x, y} = state.quickAdd;
-      openQuickAdd(characterId, startMs, x, y, quickTab.dataset.quickTab);
+      const {characterId, startMs, x, y, scope} = state.quickAdd;
+      openQuickAdd(characterId, startMs, x, y, quickTab.dataset.quickTab, scope);
       return;
     }
     if (appendAction && selectedClip()) {
       const clip = selectedClip();
-      addCharacter(clip.characterId, null, appendAction.dataset.appendAction, null, clip.id);
+      addCharacter(clip.characterId, null, appendAction.dataset.appendAction, null, clip.id,
+        M.isMultiplayer(state.project) ? {playerId: clip.playerId || '', currentCharacter: clip.useCurrentCharacter} : null);
       return;
     }
     if (quickCommon && state.quickAdd) {
-      const {characterId, startMs, afterId} = state.quickAdd;
+      const {characterId, startMs, afterId, scope} = state.quickAdd;
       closeQuickAdd();
-      addCharacter(characterId, startMs, quickCommon.dataset.quickCommon, null, afterId);
+      addCharacter(characterId, startMs, quickCommon.dataset.quickCommon, null, afterId, scope);
       return;
     }
     if (quickAdd) {
+      if (M.isMultiplayer(state.project)) {
+        M.setActivePlayer(state.project, quickAdd.dataset.playerId);
+        multiplayerEditor.paint();
+        persist();
+      }
       const rect = quickAdd.getBoundingClientRect();
       const id = quickAdd.dataset.quickAdd;
-      openQuickAdd(id, quickInsertionMs(id), rect.right + 7, rect.top);
+      openQuickAdd(id, quickInsertionMs(id), rect.right + 7, rect.top, 'skills',
+        M.isMultiplayer(state.project) ? {playerId: quickAdd.dataset.playerId, currentCharacter: false} : null);
       return;
     }
     if (quickSkill && state.quickAdd) {
-      const {characterId, startMs, afterId} = state.quickAdd;
+      const {characterId, startMs, afterId, scope} = state.quickAdd;
       closeQuickAdd();
-      addCharacter(characterId, startMs, quickSkill.dataset.quickSkill, null, afterId);
+      addCharacter(characterId, startMs, quickSkill.dataset.quickSkill, null, afterId, scope);
       return;
     }
     if (quickTemplate && state.quickAdd) {
-      const {characterId, startMs, afterId} = state.quickAdd;
+      const {characterId, startMs, afterId, scope} = state.quickAdd;
       closeQuickAdd();
-      addCharacter(characterId, startMs, 'combo', quickTemplate.dataset.quickTemplate, afterId);
+      addCharacter(characterId, startMs, 'combo', quickTemplate.dataset.quickTemplate, afterId, scope);
       return;
     }
     const operationAdd = event.target.closest('[data-operation-add]');
@@ -1857,6 +2082,7 @@
     const issue = event.target.closest('[data-issue-clip]');
     const single = event.target.closest('[data-select-single]');
     if (remove) change(() => {
+      if (M.isMultiplayer(state.project)) M.setActivePlayer(state.project, remove.dataset.playerId);
       M.removeCharacter(state.project, remove.dataset.removeCharacter);
       setSelection(state.selection);
     });
@@ -1894,6 +2120,10 @@
   $('strategyModeControl').addEventListener('click', event => {
     const button = event.target.closest('[data-strategy-format]');
     if (!button || button.getAttribute('aria-pressed') === 'true') return;
+    if (M.isMultiplayer(state.project) && button.dataset.strategyFormat === 'txt') {
+      showPlayerText();
+      return;
+    }
     pause();
     closeQuickAdd();
     closeRoleSwitcher();
@@ -1927,9 +2157,17 @@
   $('inspectorToggle').addEventListener('click', () => openPanel('inspector'));
   $('mobileAdd').addEventListener('click', () => {
     if (state.quickAdd) { closeQuickAdd(); return; }
-    const characterId = selectedClip()?.characterId || state.project.team[0];
+    const player = M.activePlayer(state.project);
+    const selected = selectedClip();
+    const characterId = M.isMultiplayer(state.project)
+      ? selected && (selected.playerId || '') === state.project.activePlayerId ? selected.characterId
+        : catalog.characters.find(character => player?.Characters.includes(character.name))?.id
+          || state.project.team[0] || catalog.characters[0].id
+      : selected?.characterId || state.project.team[0];
     if (!characterId) { openPanel('library'); return; }
-    openQuickAdd(characterId, quickInsertionMs(characterId), 0, 0);
+    openQuickAdd(characterId, quickInsertionMs(characterId), 0, 0, 'skills',
+      M.isMultiplayer(state.project) ? {playerId: state.project.activePlayerId,
+        currentCharacter: !state.project.activePlayerId || Boolean(selected?.useCurrentCharacter)} : null);
   });
   $('mobileAdjust').addEventListener('click', () => {
     const wasOpen = $('mobileAdjustPanel').classList.contains('open');
@@ -1951,8 +2189,15 @@
     $('timelineScroller').scrollLeft = 0;
   });
   $('playbackSpeed').addEventListener('change', event => { state.speed = Number(event.target.value); });
-  $('loopDuration').addEventListener('change', event => change(() => { state.project.durationMs = Math.max(1000, M.ms(event.target.value)); }));
-  $('repeatToggle').addEventListener('change', event => change(() => { state.project.repeat = event.target.checked; }));
+  $('loopDuration').addEventListener('change', event => change(() => {
+    const durationMs = Math.max(1000, M.ms(event.target.value));
+    if (M.isMultiplayer(state.project)) M.setPlayerSettings(state.project, state.project.activePlayerId, {durationMs});
+    else state.project.durationMs = durationMs;
+  }));
+  $('repeatToggle').addEventListener('change', event => change(() => {
+    if (M.isMultiplayer(state.project)) M.setPlayerSettings(state.project, state.project.activePlayerId, {repeat: event.target.checked});
+    else state.project.repeat = event.target.checked;
+  }));
   $('fitLoop').addEventListener('click', () => {
     change(() => M.fitLoop(state.project));
     toast(M.isProcess(state.project) ? '已整理动作间隔与换人边界' : '已按前台占用、换人间隔和技能冷却整理');
@@ -2003,6 +2248,15 @@
       toast(`战斗 ${document.format.toUpperCase()} 已导出`);
     }
     catch (error) { toast(error.message, true); }
+  });
+  $('confirmPlayerText').addEventListener('click', () => {
+    try {
+      const playerId = $('playerTextTarget').value;
+      const text = M.exportTextStrategy(state.project, catalog, {playerId});
+      downloadText(text, `-${playerId}.txt`);
+      $('playerTextDialog').close();
+      toast(`${playerId} 的 TXT 已导出，完整多人 JSON 保留`);
+    } catch (error) { toast(error.message, true); }
   });
   $('downloadJson').addEventListener('click', () => {
     try {
@@ -2116,6 +2370,7 @@
     closeRoleSwitcher();
     state.nativeTrackChoices = {};
     state.nativeExpandedGroups = [];
+    state.playerTrackOrder = {};
     paint(); persist();
   }
   window.combatEditor = {apiVersion: 1, state, model: M, catalog, paint, loadObject, addCharacter, updateClip,

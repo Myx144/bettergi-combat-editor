@@ -10,7 +10,7 @@ const {webcrypto} = require('node:crypto');
 function standalone() {
   const context = vm.createContext({crypto: webcrypto});
   for (const file of ['vendor/jsep.iife.min.js', 'cast-timings.js', 'operations.js', 'strategy-formats.js',
-    'roles.js', 'conditions.js', 'teams.js', 'model.js', 'catalog.js'])
+    'roles.js', 'conditions.js', 'teams.js', 'multiplayer.js', 'model.js', 'catalog.js'])
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context, {filename: file});
   return {M: context.CombatTimeline, catalog: context.CombatCatalog, context};
 }

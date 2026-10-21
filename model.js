@@ -8,7 +8,7 @@
     ? require('./operations.js') : root.CombatOperations;
   const createFormats = typeof module === 'object' && module.exports
     ? require('./strategy-formats.js') : root.CombatFormatFactory;
-  let roleTools, teamTools;
+  let roleTools, teamTools, multiplayerTools;
   const clone = value => JSON.parse(JSON.stringify(value));
   const seconds = value => Number((value / 1000).toFixed(3));
   const ms = value => Math.round(Number(value) * 1000);
@@ -184,7 +184,7 @@
   }
 
   function consumeIdleTime(previous, next) {
-    if (!previous || previous.characterId !== next.characterId) return;
+    if (!previous || !next.useCurrentCharacter && previous.characterId !== next.characterId) return;
     const busyEnd = Math.max(actionEndOf(previous), previous.startMs + minimumForegroundMs(previous));
     if (next.startMs < busyEnd || next.startMs >= endOf(previous)) return;
     previous.foregroundMs = next.startMs - previous.startMs;
@@ -192,19 +192,21 @@
 
   function repairSchedule(project, includeCooldown = false, sequence = ordered(project), rippleAfterId = null) {
     let end = 0, releaseEnd = 0, current = null, lastSwitch = null, previous = null;
+    let previousCharacter = null;
     let shift = 0, following = false;
     const casts = new Map();
     for (const clip of sequence) {
       if (following) clip.startMs += shift;
       const requested = clip.startMs;
+      const characterId = clip.useCurrentCharacter ? current : clip.characterId;
       clip.foregroundMs = Math.max(clip.foregroundMs, minimumForegroundMs(clip));
-      let earliest = previous?.characterId === clip.characterId
+      let earliest = previous && previousCharacter === characterId
         ? Math.max(actionEndOf(previous), previous.startMs + minimumForegroundMs(previous))
         : Math.max(end, releaseEnd);
-      if (current !== clip.characterId && lastSwitch !== null) {
+      if (current !== characterId && lastSwitch !== null) {
         earliest = Math.max(earliest, lastSwitch + SWITCH_COOLDOWN_MS);
       }
-      const castKey = `${clip.characterId}:${clip.abilityId}`;
+      const castKey = `${characterId}:${clip.abilityId}`;
       if (includeCooldown && casts.has(castKey)) {
         const previous = casts.get(castKey);
         earliest = Math.max(earliest, previous.startMs + previous.cooldownMs);
@@ -213,12 +215,13 @@
       if (following) shift += clip.startMs - requested;
       if (clip.id === rippleAfterId) following = true;
       consumeIdleTime(previous, clip);
-      if (current !== null && current !== clip.characterId) lastSwitch = clip.startMs;
-      if (current !== clip.characterId) releaseEnd = 0;
-      current = clip.characterId;
+      if (previous && current !== characterId) lastSwitch = clip.startMs;
+      if (current !== characterId) releaseEnd = 0;
+      current = characterId;
       end = endOf(clip);
       releaseEnd = Math.max(releaseEnd, swapEndOf(clip));
       previous = clip;
+      previousCharacter = characterId;
       casts.set(castKey, clip);
     }
     project.durationMs = Math.max(project.durationMs, end, project.repeat ? minimumLoopMs(project) : 0);
@@ -309,7 +312,7 @@
   }
 
   function placementState(rows) {
-    const state = {previous: null, releaseEnd: 0, lastSwitch: null};
+    const state = {previous: null, characterId: null, releaseEnd: 0, lastSwitch: null};
     for (const clip of rows) advancePlacement(state, clip);
     return state;
   }
@@ -317,7 +320,7 @@
   function earliestPlacement(state, clip) {
     const previous = state.previous;
     if (!previous) return 0;
-    const changing = previous.characterId !== clip.characterId;
+    const changing = !clip.useCurrentCharacter && state.characterId !== clip.characterId;
     return Math.max(changing ? endOf(previous)
       : Math.max(actionEndOf(previous), previous.startMs + minimumForegroundMs(previous)),
     changing ? state.releaseEnd : 0,
@@ -325,9 +328,10 @@
   }
 
   function advancePlacement(state, clip) {
-    if (state.previous?.characterId !== clip.characterId) {
+    if (!clip.useCurrentCharacter && state.characterId !== clip.characterId) {
       if (state.previous) state.lastSwitch = clip.startMs;
       state.releaseEnd = 0;
+      state.characterId = clip.characterId;
     }
     state.previous = clip;
     state.releaseEnd = Math.max(state.releaseEnd, swapEndOf(clip));
@@ -497,19 +501,22 @@
   }
 
   function switches(project, includeOpening = false) {
-    let current = null;
+    let current = null, encountered = false;
     return ordered(project).flatMap(clip => {
-      if (clip.characterId === current) return [];
+      if (clip.useCurrentCharacter) { encountered = true; return []; }
+      if (clip.characterId === current) { encountered = true; return []; }
       const opening = current === null;
       current = clip.characterId;
-      if (opening && !includeOpening) return [];
+      const skip = opening && !includeOpening && !encountered;
+      encountered = true;
+      if (skip) return [];
       return [{startMs: clip.startMs, characterId: current, clipId: clip.id}];
     });
   }
 
   function loopReturn(project) {
-    const rows = ordered(project), first = rows[0], last = rows.at(-1);
-    if (!project.repeat || !first || first.characterId === last.characterId) return null;
+    const rows = ordered(project), first = rows[0], last = rows.findLast(clip => !clip.useCurrentCharacter);
+    if (!project.repeat || !first || first.useCurrentCharacter || !last || first.characterId === last.characterId) return null;
     return {startMs: project.durationMs - SWITCH_COOLDOWN_MS,
       characterId: first.characterId, clipId: first.id, fromClipId: last.id};
   }
@@ -528,6 +535,7 @@
   }
 
   function validate(project, catalog = null, {teams = true} = {}) {
+    if (multiplayerTools?.isMultiplayer(project)) return multiplayerTools.validateMultiplayer(project, catalog);
     if (teams && teamTools?.hasTeams(project) && !isText(project)) {
       return teamTools.validateTeams(project, catalog);
     }
@@ -680,12 +688,12 @@
     const natural = clip.startMs + clip.effectMs;
     if (clip.effectPolicy !== 'onfield') return natural;
     const departure = ordered(project).find(item =>
-      item.startMs > clip.startMs && item.characterId !== clip.characterId);
+      !item.useCurrentCharacter && item.startMs > clip.startMs && item.characterId !== clip.characterId);
     let end = Math.min(natural, departure?.startMs ?? Infinity);
     if (project.repeat && project.clips.length) {
       const returnEntry = loopReturn(project);
       if (returnEntry && returnEntry.characterId !== clip.characterId) end = Math.min(end, returnEntry.startMs);
-      const firstDifferent = ordered(project).find(item => item.characterId !== clip.characterId);
+      const firstDifferent = ordered(project).find(item => !item.useCurrentCharacter && item.characterId !== clip.characterId);
       if (firstDifferent) end = Math.min(end, project.durationMs + firstDifferent.startMs);
     }
     return end;
@@ -694,15 +702,17 @@
   function stateAt(project, timeMs, includePreviousCycle = false) {
     const rows = ordered(project);
     const active = rows.filter(clip => clip.startMs <= timeMs).at(-1);
+    const named = rows.filter(clip => !clip.useCurrentCharacter && clip.startMs <= timeMs).at(-1);
     const returnEntry = loopReturn(project);
-    const foregroundId = returnEntry && timeMs >= returnEntry.startMs ? returnEntry.characterId : active?.characterId ||
-      (includePreviousCycle && project.repeat ? returnEntry?.characterId || rows.at(-1)?.characterId : null);
+    const foregroundId = returnEntry && timeMs >= returnEntry.startMs ? returnEntry.characterId : named?.characterId ||
+      (includePreviousCycle && project.repeat ? returnEntry?.characterId
+        || rows.findLast(clip => !clip.useCurrentCharacter)?.characterId : null);
     const candidates = includePreviousCycle && project.repeat
       ? [...rows.map(clip => ({clip, offset: -project.durationMs})), ...rows.map(clip => ({clip, offset: 0}))]
       : rows.map(clip => ({clip, offset: 0}));
     const statuses = project.team.map(characterId => {
       const skills = ['skill', 'burst'].map(abilityId => {
-        const cast = candidates.filter(entry => entry.clip.characterId === characterId
+        const cast = candidates.filter(entry => !entry.clip.useCurrentCharacter && entry.clip.characterId === characterId
           && entry.clip.abilityId === abilityId && entry.clip.startMs + entry.offset <= timeMs).at(-1);
         const elapsed = cast ? timeMs - cast.clip.startMs - cast.offset : null;
         const cooldownMs = cast ? Math.max(0, cast.clip.cooldownMs - elapsed) : 0;
@@ -761,20 +771,21 @@
       entries.push(entry);
       return entry;
     };
-    let current = rows[0]?.characterId;
+    let current = rows[0]?.useCurrentCharacter ? null : rows[0]?.characterId;
     if (rows[0]?.startMs > 0) append('WaitOpening', null, `wait(${seconds(rows[0].startMs)})`);
     for (let index = 0; index < rows.length; index++) {
       const clip = rows[index], next = rows[index + 1];
-      if (clip.characterId !== current) {
+      if (!clip.useCurrentCharacter && clip.characterId !== current) {
         if (layout) append(`ReleaseBefore${clip.id}`, null, 'wait(0.01)',
           {owner: current, guard: releaseGuards.join(' && ')});
         changes.push(append(`Switch${clip.id}`, clip.characterId, 'wait(0.01)',
           {type: 'switch', guard: layout ? '' : releaseGuards.join(' && ')}));
         releaseGuards = [];
-        current = clip.characterId;
       }
-      const readiness = clip.readiness === 'skill' ? `e-ready(${character(catalog, clip.characterId).name})`
-        : clip.readiness === 'burst' ? `q-ready(${character(catalog, clip.characterId).name})` : '';
+      if (!clip.useCurrentCharacter) current = clip.characterId;
+      const target = clip.useCurrentCharacter ? '' : character(catalog, clip.characterId).name;
+      const readiness = clip.readiness === 'skill' ? `e-ready(${target})`
+        : clip.readiness === 'burst' ? `q-ready(${target})` : '';
       const managedCast = isCast(clip) && clip.commandOverride === null;
       let command = commandsFor(clip);
       if (managedCast) {
@@ -785,7 +796,7 @@
         }
       }
       const branchSource = clipEntries.get(clip.followSourceId);
-      const entry = append(clip.name, clip.characterId, command, {
+      const entry = append(clip.name, clip.useCurrentCharacter ? null : clip.characterId, command, {
         name: clip.name, index: indexes.get(clip.id), clip,
         condition: clip.condition, readiness, ensureCast: clip.ensureCast,
         ...(branchSource ? {branchSource} : {})
@@ -800,7 +811,7 @@
         releaseGuards.push(`!(since(${entry.name}) < ${seconds(castLockMs(clip) - clip.castInputMs)})`);
       }
       if (managedCast && clip.followAttack && clip.attackAfterMs > 0 || layout?.followIds.has(clip.id)) {
-        append(`Attack${clip.id}`, clip.characterId,
+        append(`Attack${clip.id}`, clip.useCurrentCharacter ? null : clip.characterId,
           clip.followAttack && clip.attackAfterMs > 0 ? `attack(${seconds(clip.attackAfterMs)})` : 'wait(0.01)', {
           branchSource: entry,
           ...(entry.skipName ? {skipName: nameFor(`SkipAttack${clip.id}`)} : {})
@@ -891,6 +902,9 @@
 
   function exportStrategy(project, catalog, {embedProject = true,
     compilerVersion = null, check = true, teamScope = true} = {}) {
+    if (multiplayerTools?.isMultiplayer(project)) {
+      return multiplayerTools.exportMultiplayer(project, catalog, {embedProject, check});
+    }
     if (isText(project)) throw new Error('当前为 TXT 模式，请导出 TXT 战斗策略');
     if (teamScope && teamTools?.hasTeams(project)) {
       return teamTools.exportTeams(project, catalog, {embedProject, check});
@@ -919,10 +933,10 @@
     let switchIndex = Math.max(-1, ...indices.values()) + 1;
     const usedNames = new Set(rows.map(clip => clip.name));
     const entries = [];
-    let current = compilerVersion === 1 ? null : rows[0]?.characterId;
+    let current = compilerVersion === 1 || rows[0]?.useCurrentCharacter ? null : rows[0]?.characterId;
     const switchEntries = [];
     for (const clip of rows) {
-      if (project.scheduling === 'sequence' && clip.characterId !== current) {
+      if (project.scheduling === 'sequence' && !clip.useCurrentCharacter && clip.characterId !== current) {
         let name = `Switch${clip.id}`;
         while (usedNames.has(name)) name += 'S';
         usedNames.add(name);
@@ -930,8 +944,8 @@
           startMs: clip.startMs, condition: '', index: switchIndex++};
         switchEntries.push(entry);
         entries.push(entry);
-        current = clip.characterId;
       }
+      if (!clip.useCurrentCharacter) current = clip.characterId;
       entries.push({...clip, type: 'skill'});
     }
     const returnEntry = compilerVersion >= 2 ? loopReturn(project) : null;
@@ -972,7 +986,7 @@
           entry.Expression = sequenceCondition(project, entries, index, prior);
         }
       }
-      const characterName = project.scheduling === 'original'
+      const characterName = clip.useCurrentCharacter ? '' : project.scheduling === 'original'
         ? read(clip.sourceAction, 'Character', character(catalog, clip.characterId).name)
         : character(catalog, clip.characterId).name;
       return {...source, Name: clip.name, Character: characterName,
@@ -1007,6 +1021,9 @@
   }
 
   function normalizeProject(value, catalog, {separateActions = true, allowActorPool = false} = {}) {
+    if (multiplayerTools?.isMultiplayer(value)) {
+      return multiplayerTools.normalizeMultiplayer(value, catalog, {separateActions, allowActorPool});
+    }
     if (value.format !== 'betterbgi-combat-timeline' || value.version !== 1
       || !Array.isArray(value.team) || !Array.isArray(value.clips)) throw new Error('不是支持的时间轴工程');
     const project = {...emptyProject(), ...clone(value)};
@@ -1069,6 +1086,9 @@
 
   function importStrategy(value, catalog, {strategyFormat = 'json'} = {}) {
     if (value.format === 'betterbgi-combat-timeline') return normalizeProject(value, catalog);
+    if (read(value, 'Multiplayer', null) !== null && multiplayerTools) {
+      return multiplayerTools.importMultiplayer(value, catalog);
+    }
     const info = read(value, 'Info', {});
     const embedded = read(read(info, 'Config', {}), 'CombatTimeline', null);
     if (embedded?.version === 1) {
@@ -1240,6 +1260,10 @@
     if (plan) plan.roster = plan.roster.map(id => id === before ? candidateId : id);
     return result;
   };
+  const createMultiplayer = typeof module === 'object' && module.exports
+    ? require('./multiplayer.js') : root.CombatMultiplayerFactory;
+  multiplayerTools = createMultiplayer(api, conditions);
+  Object.assign(api, multiplayerTools);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.CombatTimeline = api;
 })(globalThis);

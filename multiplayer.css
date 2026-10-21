@@ -1,0 +1,118 @@
+.multiplayer-controls { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 0 1 auto; }
+.multiplayer-target-control { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.multiplayer-target-control > span { color: #84909d; font-size: 10px; white-space: nowrap; }
+.multiplayer-target-control select { min-width: 90px; width: 150px; max-width: 190px; height: 29px; padding: 3px 6px; font-size: 11px; text-overflow: ellipsis; }
+.multiplayer-controls .icon-button { width: 29px; min-width: 29px; height: 29px; min-height: 29px; padding: 6px; flex: 0 0 auto; }
+.multiplayer-controls .multiplayer-manage { width: auto; min-width: 29px; gap: 4px; }
+.multiplayer-button-label { font-size: 10px; }
+.is-multiplayer .multiplayer-button-label { display: none; }
+.multiplayer-dialog { width: 940px; overflow: hidden; }
+.multiplayer-dialog[open] { display: flex; flex-direction: column; height: min(810px, calc(100dvh - 40px)); }
+.multiplayer-dialog .dialog-heading { flex: 0 0 auto; gap: 10px; }
+.multiplayer-dialog .dialog-heading h2 { min-width: 0; overflow-wrap: anywhere; }
+.multiplayer-configuration-bar { display: flex; align-items: flex-end; gap: 14px; padding: 11px 16px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.multiplayer-field { display: grid; gap: 5px; min-width: 0; }
+.multiplayer-field > span:first-child { color: #83909d; font-size: 10px; line-height: 1.5; }
+.multiplayer-field input, .multiplayer-field select, .multiplayer-field textarea { width: 100%; min-width: 0; font-size: 11px; min-height: 32px; padding: 6px 8px; }
+.multiplayer-field textarea { resize: vertical; font: 11px/1.6 "Cascadia Code", Consolas, "Microsoft YaHei", monospace; min-height: 55px; }
+.multiplayer-host-field { min-width: 110px; flex: 0 1 220px; }
+.multiplayer-slot-summary { font-size: 11px; color: #7e919e; padding-bottom: 7px; line-height: 1.6; margin-left: auto; }
+.multiplayer-content { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; }
+.multiplayer-blocked { padding: 20px 16px; margin: 0; color: var(--danger); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.multiplayer-player-list { padding: 0 16px; }
+.multiplayer-player-row { padding: 14px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.multiplayer-player-heading { display: flex; align-items: center; gap: 9px; justify-content: space-between; margin-bottom: 10px; }
+.multiplayer-player-heading h3 { margin: 0; font-size: 12px; font-weight: 600; }
+.multiplayer-player-heading > span { color: #8c98a4; font-size: 10px; line-height: 1.5; }
+.multiplayer-player-fields { display: grid; grid-template-columns: minmax(130px, 180px) minmax(0, 1fr) 150px; gap: 12px; align-items: start; }
+.multiplayer-id-field input { font-family: "Cascadia Code", Consolas, monospace; }
+.multiplayer-character-slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; min-width: 0; }
+.multiplayer-character-field { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.multiplayer-character-field select { flex: 1; min-width: 0; padding-inline: 5px; }
+.multiplayer-avatar, .multiplayer-avatar-placeholder { display: inline-grid; place-items: center; width: 25px; height: 25px; flex: 0 0 25px; border-radius: 50%; object-fit: contain; background: #eef2f6; color: #81919e; font-size: 11px; }
+.multiplayer-avatar-placeholder > .lucide { width: 15px; height: 15px; }
+.multiplayer-extra-slot > span:first-child { color: var(--danger); }
+.multiplayer-extra-slot select { border-color: #d9a0a2; }
+.multiplayer-player-preactions { margin-top: 10px; }
+.multiplayer-id-mapping { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; color: #6a8896; font-size: 10px; line-height: 1.6; margin: 9px 0 0; overflow-wrap: anywhere; }
+.multiplayer-id-mapping code { overflow-wrap: anywhere; }
+.multiplayer-id-mapping > .lucide { width: 12px; height: 12px; }
+.multiplayer-common-section, .multiplayer-ownership-section, .multiplayer-role-section { padding: 14px 16px; border-bottom: 1px solid var(--line); min-width: 0; }
+.multiplayer-common-section > .multiplayer-field > span:first-child { font-size: 12px; color: var(--ink); font-weight: 600; }
+.multiplayer-field-note { color: #8895a2; font-size: 10px; line-height: 1.7; margin: 7px 0 0; overflow-wrap: anywhere; }
+.multiplayer-section-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.multiplayer-section-heading h3 { font-size: 12px; font-weight: 600; margin: 0; }
+.multiplayer-section-heading > span { color: #8996a4; font-size: 10px; }
+.multiplayer-assignment-list { margin-top: 10px; }
+.multiplayer-role-list { margin-top: 10px; }
+.multiplayer-role-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, .7fr); align-items: start; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.multiplayer-role-row > div { display: grid; gap: 5px; min-width: 0; }
+.multiplayer-role-row strong { font-size: 11px; font-weight: 550; overflow-wrap: anywhere; }
+.multiplayer-role-row > div > span { font-size: 10px; color: #8695a2; line-height: 1.6; overflow-wrap: anywhere; }
+.multiplayer-assignment-row { display: grid; grid-template-columns: minmax(150px, 1.3fr) minmax(130px, 1fr) minmax(170px, 1.2fr); align-items: start; gap: 13px; padding: 10px 0; border-top: 1px solid var(--line); min-width: 0; }
+.multiplayer-assignment-identity { display: grid; gap: 5px; padding-top: 3px; min-width: 0; }
+.multiplayer-assignment-identity > strong { font-size: 11px; font-weight: 550; overflow-wrap: anywhere; }
+.multiplayer-assignment-identity > span { color: #909ba8; font: 10px/1.6 Consolas, monospace; overflow-wrap: anywhere; }
+.multiplayer-assignment-character { display: grid; min-width: 0; gap: 6px; }
+.multiplayer-current-checkbox { display: inline-flex; align-items: center; gap: 5px; min-height: 20px; line-height: 1.5; font-size: 10px; color: #7d8d9d; }
+.multiplayer-assignment-character > select { width: 100%; min-width: 0; min-height: 32px; font-size: 11px; padding: 5px 7px; }
+.multiplayer-assignment-outside .multiplayer-assignment-identity > span { color: var(--danger); }
+.multiplayer-empty-state { color: #8a97a3; font-size: 11px; line-height: 1.7; padding: 10px 0; margin: 0; }
+.multiplayer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; flex: 0 0 auto; padding: 10px 16px; border-top: 1px solid var(--line); }
+.multiplayer-actions > button { font-size: 11px; flex: 0 0 auto; }
+.multiplayer-actions > [role="status"] { color: #8b97a3; font-size: 10px; min-width: 0; flex: 1; overflow-wrap: anywhere; line-height: 1.6; }
+.multiplayer-errors { flex: 1 0 100%; min-width: 0; max-height: 100px; overflow: auto; margin: 0; padding: 0 0 0 18px; color: var(--danger); font-size: 11px; line-height: 1.65; overflow-wrap: anywhere; }
+.multiplayer-errors > li + li { margin-top: 3px; }
+.queue-player-control { display: flex; align-items: center; gap: 8px; margin: 10px 0; min-width: 0; }
+.queue-player-control > span { font-size: 11px; color: #83919f; flex: 0 0 auto; }
+.queue-player-control select { min-width: 0; width: 240px; max-width: 100%; min-height: 32px; font-size: 11px; padding: 5px 8px; text-overflow: ellipsis; }
+
+@media (max-width: 1100px) {
+  .multiplayer-target-control select { width: 115px; }
+}
+@media (max-width: 710px) {
+  #mobileMultiplayerSlot { min-width: 0; }
+  .multiplayer-controls.is-multiplayer { width: 100%; }
+  .multiplayer-target-control { min-width: 0; flex: 1; }
+  .multiplayer-target-control select { flex: 1; width: 100%; max-width: none; height: 30px; min-height: 30px; }
+  .multiplayer-controls .icon-button { width: 31px; min-width: 31px; height: 30px; min-height: 30px; }
+  .multiplayer-controls .multiplayer-manage { width: auto; }
+  .multiplayer-dialog { width: 100%; max-width: calc(100vw - 12px); }
+  .multiplayer-dialog[open] { height: calc(100dvh - 20px); max-height: calc(100dvh - 20px); }
+  .multiplayer-dialog .dialog-heading { padding: 9px 10px; }
+  .multiplayer-dialog .dialog-heading h2 { font-size: 12px; }
+  .multiplayer-configuration-bar { gap: 8px; padding: 9px 10px; flex-wrap: wrap; }
+  .multiplayer-host-field { flex: 1; min-width: 90px; }
+  .multiplayer-slot-summary { flex: 1 0 100%; font-size: 10px; padding-bottom: 0; margin-left: 0; }
+  .multiplayer-player-list { padding: 0 10px; }
+  .multiplayer-player-row { padding: 12px 0; }
+  .multiplayer-player-heading h3 { font-size: 11px; }
+  .multiplayer-player-heading > span { font-size: 9px; }
+  .multiplayer-player-fields { grid-template-columns: minmax(0, 1fr) minmax(105px, .85fr); gap: 10px 8px; }
+  .multiplayer-character-slots { grid-column: 1 / -1; grid-row: 2; }
+  .multiplayer-targeting-field { grid-column: 2; grid-row: 1; }
+  .multiplayer-field input, .multiplayer-field select { min-height: 35px; }
+  .multiplayer-field textarea { min-height: 64px; }
+  .multiplayer-common-section, .multiplayer-ownership-section, .multiplayer-role-section { padding: 12px 10px; }
+  .multiplayer-role-row { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+  .multiplayer-assignment-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 9px 8px; padding: 10px 0; }
+  .multiplayer-assignment-identity { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 7px; }
+  .multiplayer-assignment-identity > span { font-size: 9px; max-width: 110px; }
+  .multiplayer-assignment-character > select { min-height: 35px; }
+  .multiplayer-current-checkbox { min-height: 20px; font-size: 9px; gap: 4px; }
+  .multiplayer-actions { padding: 9px 10px; gap: 6px; }
+  .multiplayer-actions > button { padding-inline: 8px; font-size: 10px; }
+  .multiplayer-actions > [role="status"] { font-size: 9px; }
+  .multiplayer-errors { font-size: 10px; max-height: 95px; }
+  .queue-player-control select { flex: 1; width: 100%; }
+}
+@media (max-width: 710px) and (orientation: landscape) and (max-height: 500px) {
+  .multiplayer-configuration-bar { align-items: center; }
+  .multiplayer-slot-summary { flex: 0 1 auto; margin-left: auto; }
+  .multiplayer-player-fields { grid-template-columns: minmax(100px, .8fr) minmax(0, 1.5fr) minmax(110px, .8fr); }
+  .multiplayer-character-slots { grid-column: 2; grid-row: 1; }
+  .multiplayer-targeting-field { grid-column: 3; }
+  .multiplayer-assignment-row { grid-template-columns: minmax(0, 1fr) minmax(100px, 1fr) minmax(130px, 1fr); }
+  .multiplayer-assignment-identity { grid-column: auto; grid-template-columns: minmax(0, 1fr); }
+  .multiplayer-errors { max-height: 60px; }
+}

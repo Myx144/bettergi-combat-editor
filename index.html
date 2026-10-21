@@ -6,21 +6,24 @@
   <meta name="color-scheme" content="light">
   <title>战斗时间轴 · BetterGI Combat Editor</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="editor.css?v=combat-teams-20261018">
+  <link rel="stylesheet" href="editor.css?v=combat-multiplayer-20261022">
   <link rel="stylesheet" href="teams.css?v=combat-teams-20261018">
+  <link rel="stylesheet" href="multiplayer.css?v=combat-multiplayer-20261022">
   <script src="vendor/lucide.min.js" defer></script>
   <script src="vendor/jsep.iife.min.js" defer></script>
   <script src="catalog.js" defer></script>
   <script src="cast-timings.js" defer></script>
   <script src="operations.js?v=combat-formats-20261018" defer></script>
-  <script src="strategy-formats.js?v=combat-formats-20261018" defer></script>
+  <script src="strategy-formats.js?v=combat-multiplayer-20261022" defer></script>
   <script src="roles.js?v=combat-formats-20261018" defer></script>
   <script src="conditions.js?v=combat-rules-20261018" defer></script>
-  <script src="teams.js?v=combat-teams-20261018" defer></script>
-  <script src="model.js?v=combat-teams-20261018" defer></script>
-  <script src="rule-editor.js?v=combat-teams-20261018" defer></script>
+  <script src="teams.js?v=combat-multiplayer-20261022" defer></script>
+  <script src="multiplayer.js?v=combat-multiplayer-20261022" defer></script>
+  <script src="model.js?v=combat-multiplayer-20261022" defer></script>
+  <script src="rule-editor.js?v=combat-multiplayer-20261022" defer></script>
   <script src="team-editor.js?v=combat-teams-20261018" defer></script>
-  <script src="editor.js?v=combat-teams-20261018" defer></script>
+  <script src="multiplayer-editor.js?v=combat-multiplayer-20261022" defer></script>
+  <script src="editor.js?v=combat-multiplayer-20261022" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -48,6 +51,7 @@
 
   <div class="editing-toolbar">
     <div class="toolbar-group">
+      <div id="multiplayerControls" class="multiplayer-controls"></div>
       <div id="teamControls" class="team-controls"></div>
       <button id="libraryToggle" class="panel-toggle" type="button" aria-expanded="false"><i data-lucide="users-round"></i><span>角色</span></button>
       <button id="undo" class="icon-button" type="button" title="撤销" aria-label="撤销" disabled><i data-lucide="undo-2"></i></button>
@@ -95,6 +99,7 @@
     <section class="workspace" aria-label="战斗排轴">
       <section class="mobile-preview" id="mobilePreview" aria-label="当前动作">
         <div class="mobile-preview-heading"><div id="mobileProjectSlot"></div><div class="mobile-strategy-controls"><div id="mobileFormatSlot"></div><div id="mobileModeSlot"></div></div></div>
+        <div id="mobileMultiplayerSlot"></div>
         <div id="mobileTeamSlot"></div>
         <div class="mobile-preview-identity" id="mobilePreviewIdentity"></div>
       </section>
@@ -182,8 +187,9 @@
       </section>
     </div>
     <section id="ruleQueueView" class="rule-queue-view" hidden aria-label="全局优先级队列">
-      <div class="queue-introduction"><h3>全局检查顺序</h3><span id="queueStats"></span>
-        <p>本队列按实际导出 JSON 展开，包含尚未应用的条件修改。运行时先按实际队伍过滤，再从上到下选择第一个成立的条目，执行后回到队首。</p>
+      <div class="queue-introduction"><h3 id="queueHeading">全局检查顺序</h3><span id="queueStats"></span>
+        <div id="queuePlayerControl"></div>
+        <p id="queueDescription">本队列按实际导出 JSON 展开，包含尚未应用的条件修改。运行时先按实际队伍过滤，再从上到下选择第一个成立的条目，执行后回到队首。</p>
         <p id="queueWarning" class="queue-warning"></p></div>
       <ol id="priorityQueue" class="priority-queue"></ol>
     </section>
@@ -222,6 +228,14 @@
       <button id="createEmpty" type="button"><i data-lucide="file-plus-2"></i><span>空白工程</span></button>
       <button id="createDemo" type="button"><i data-lucide="users-round"></i><span>雷国示例</span></button>
     </div>
+  </dialog>
+  <dialog id="playerTextDialog" class="new-dialog">
+    <header class="dialog-heading"><h2>导出单端 TXT</h2><button class="icon-button" type="button"
+      data-close-dialog="playerTextDialog" aria-label="关闭单端导出"><i data-lucide="x"></i></button></header>
+    <label class="field"><span>执行玩家</span><select id="playerTextTarget" aria-label="TXT 执行玩家"></select></label>
+    <p class="player-export-note">TXT 仅包含所选玩家和各端通用动作，按参考轴顺序执行。JSON 的条件、优先级和有限重试不会保留。</p>
+    <footer class="dialog-actions"><button type="button" data-close-dialog="playerTextDialog">取消</button>
+      <button id="confirmPlayerText" class="primary" type="button"><i data-lucide="download"></i><span>导出本端 TXT</span></button></footer>
   </dialog>
 </body>
 </html>

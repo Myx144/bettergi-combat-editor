@@ -87,7 +87,8 @@
       return command;
     }
 
-    function exportTextStrategy(project, catalog, {check = true} = {}) {
+    function exportTextStrategy(project, catalog, {check = true, playerId} = {}) {
+      if (M.isMultiplayer?.(project)) return M.exportPlayerText(project, catalog, playerId, {check});
       const issues = M.validate(project, catalog).filter(issue => issue.severity !== 'warning');
       if (check && issues.length) throw new Error(issues[0].message);
       const cleanComment = value => String(value || '').replace(/[\r\n]/g, ' ');
@@ -97,6 +98,7 @@
       const rows = M.ordered(project);
       for (let index = 0; index < rows.length; index++) {
         const clip = rows[index], avatar = M.character(catalog, clip.characterId);
+        const name = clip.useCurrentCharacter ? '当前角色' : avatar.name;
         let command = textCommand(clip);
         validateCommands(command);
         const rounds = parseRounds(clip.txtRounds);
@@ -106,11 +108,12 @@
           const gap = clip.startMs - (previous ? M.actionEndOf(previous) : 0);
           if (gap > 0) {
             const prefix = rounds.length ? `round(${String(clip.txtRounds).trim()}),` : '';
-            const waiting = previous ? M.character(catalog, previous.characterId) : avatar;
-            lines.push(`${waiting.name} ${prefix}wait(${M.seconds(gap)})`);
+            const waiting = previous ? previous.useCurrentCharacter ? '当前角色'
+              : M.character(catalog, previous.characterId).name : name;
+            lines.push(`${waiting} ${prefix}wait(${M.seconds(gap)})`);
           }
         }
-        lines.push(`${avatar.name} ${command}`);
+        lines.push(`${name} ${command}`);
       }
       return lines.join('\n') + '\n';
     }
@@ -148,7 +151,7 @@
             const match = statement.trim().match(/^(\S+)\s+([\s\S]+)$/);
             if (!match) throw new Error('每行需以角色名和空格开头');
             const avatar = catalog.characters.find(item => item.name === match[1] || item.aliases.includes(match[1]));
-            if (!avatar) throw new Error(`无法识别角色“${match[1]}”`);
+            if (!avatar && match[1] !== '当前角色') throw new Error(`无法识别角色“${match[1]}”`);
             for (const part of match[2].split('|').filter(value => value.trim())) {
               const commands = M.parseCommands(part);
               let rounds = '';
@@ -160,7 +163,7 @@
               validateCommands(commands.map(command => command.raw).join(','));
               for (const chunk of commandChunks(commands)) {
                 const command = chunk.map(item => item.raw).join(',');
-                actions.push({Name: `Step${actions.length + 1}`, Character: avatar.name,
+                actions.push({Name: `Step${actions.length + 1}`, Character: avatar?.name || '',
                   Action: command, Index: actions.length, Condition: {Expression: ''}});
                 settings.push({rounds, commands: chunk});
               }

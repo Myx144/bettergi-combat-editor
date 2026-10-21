@@ -54,6 +54,7 @@
     const inferredRoster = project => (project.team || []).length <= 4 ? [...project.team] : [];
 
     function enableTeams(project) {
+      if (M.isMultiplayer?.(project)) throw new Error('多人玩家与多套阵容不能联合使用，请先保留为独立工程');
       if (hasTeams(project)) return project;
       if (project.teamPlans !== undefined && !Array.isArray(project.teamPlans)) throw new Error('队伍列表无效');
       const saved = snapshot(project);
@@ -85,6 +86,7 @@
     }
 
     function addTeam(project, catalog, {name, project: incoming, duplicate = false} = {}) {
+      if (M.isMultiplayer?.(incoming || {})) throw new Error('多人玩家工程不能作为多套阵容中的一个队伍');
       enableTeams(project);
       syncTeams(project);
       let saved;
@@ -157,6 +159,7 @@
       if (!ids.has(project.activeTeamId)) throw new Error('当前队伍不存在');
       for (const plan of project.teamPlans) {
         const saved = snapshot(plan.id === project.activeTeamId ? project : plan.project);
+        if (M.isMultiplayer?.(saved)) throw new Error('多人玩家与多套阵容不能联合使用，请分别保存工程');
         plan.project = M.normalizeProject(saved, catalog, {allowActorPool: true});
         plan.name = typeof plan.name === 'string' && plan.name.trim() ? plan.name : '未命名队伍';
         plan.enabled ??= true;
@@ -412,6 +415,7 @@
     }
 
     function compile(plan, catalog) {
+      if (M.isMultiplayer?.(plan.project)) throw new Error('多人玩家工程不能与多套阵容联合编译');
       const strategy = M.exportStrategy(scopedProject(plan, catalog), catalog,
         {embedProject: false, check: false, teamScope: false});
       return {strategy, ...namespace(plan, strategy, catalog)};
@@ -427,6 +431,10 @@
       if (!plans.length) issue('teams-enabled', '请至少启用一个队伍后联合导出');
       let total = 0;
       for (const plan of plans) {
+        if (M.isMultiplayer?.(plan.project)) {
+          issue('multiplayer-mode', `「${plan.name}」是多人玩家工程，不能与多套阵容联合导出`, plan);
+          continue;
+        }
         if (isText(plan.project)) {
           issue('teams-format', `「${plan.name}」是 TXT 策略，请停用或切换为 JSON 后联合导出`, plan);
           continue;
@@ -460,6 +468,7 @@
     }
 
     function exportTeams(project, catalog, {embedProject = true, check = true} = {}) {
+      if (M.isMultiplayer?.(project)) throw new Error('多人玩家与多套阵容不能联合导出，请分别保存工程');
       if (!hasTeams(project)) return M.exportStrategy(project, catalog, {embedProject, check, teamScope: false});
       if (isText(project)) throw new Error('TXT 策略请按当前队伍导出 TXT 文件');
       syncTeams(project);

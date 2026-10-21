@@ -139,6 +139,23 @@ h2 { margin: 0; font-size: 12px; font-weight: 650; }
 .loop-target { position: absolute; display: flex; align-items: center; gap: 5px; height: 33px; padding: 3px 7px 3px 3px; border: 1px dashed #a4b4c8; border-radius: 5px; background: #f5f8fc; color: #8291a4; font-size: 9px; white-space: nowrap; pointer-events: none; z-index: 3; }
 .loop-target img, .loop-target .avatar-fallback { width: 24px; height: 24px; border-radius: 50%; object-fit: contain; }
 .track { position: relative; height: var(--track-height); border-bottom: 1px solid var(--line); }
+.player-track-group { position: relative; display: flex; align-items: stretch; gap: 10px; min-height: 32px; border-bottom: 1px solid #d4dfe4; background: #eff4f5; color: #607c87; }
+.player-track-group > .sticky-label { display: flex; flex: 0 0 var(--label-width); background: #eff4f5; }
+.player-track-group [data-select-player] { justify-content: flex-start; width: 100%; min-height: 32px; padding: 5px 10px; gap: 6px; border: 0; border-radius: 0; text-align: left; background: transparent; font-size: 10px; overflow-wrap: anywhere; }
+.player-track-group [data-select-player].selected { color: #267d83; box-shadow: inset 3px 0 #459a9b; background: #e5eff0; }
+.player-track-group [data-select-player] .lucide { width: 13px; height: 13px; }
+.player-track-group [data-select-player] span { min-width: 0; overflow-wrap: anywhere; }
+.player-track-summary { display: flex; align-items: center; flex: 0 0 auto; padding-block: 5px; font-size: 10px; }
+.player-track-group > .icon-button { position: sticky; left: calc(var(--label-width) + 108px); width: 28px; height: 31px; min-height: 31px; }
+.player-track .track-index { overflow-wrap: anywhere; }
+.player-export-note { padding: 0 16px; color: #7b8794; font-size: 11px; line-height: 1.8; }
+#queuePlayerControl { max-width: 320px; margin-block: 10px; }
+#queuePlayerControl select { max-width: 100%; width: 100%; font-size: 11px; }
+@media (min-width: 711px) and (max-width: 1090px) {
+  .multiplayer-project .editing-toolbar { height: auto; min-height: 45px; flex-wrap: wrap; }
+  .multiplayer-project .editing-toolbar > .toolbar-group { flex-wrap: wrap; }
+  .multiplayer-project .zoom-group { margin-left: auto; }
+}
 .track.selected-track { background: #edf3fb28; }
 .track-label { height: 100%; padding: 12px 11px; background: #fcfdff; display: flex; flex-direction: column; gap: 7px; cursor: grab; }
 .track-heading { display: flex; align-items: center; gap: 7px; }

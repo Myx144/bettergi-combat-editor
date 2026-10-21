@@ -9,11 +9,27 @@
     const icon = name => `<i data-lucide="${name}"></i>`;
     const dialog = $('rulesDialog');
     let current = null, dragging = null, ghost = null, highlighted = null, suppressClick = false;
-    const actionNames = () => getProject().clips.map(clip => clip.name);
+    const selectedRuleClip = () => getProject().clips.find(row => row.id === current?.clipId);
+    const scopedClips = (clip = selectedRuleClip()) => {
+      const project = getProject();
+      if (!M.isMultiplayer(project)) return project.clips;
+      const playerId = clip?.playerId || '';
+      return project.clips.filter(row => !row.playerId || row.playerId === playerId);
+    };
+    const actionNames = clip => scopedClips(clip).map(row => row.name);
+    const characterNames = () => {
+      const project = getProject();
+      if (!M.isMultiplayer(project)) return catalog.characters.map(row => row.name);
+      const clip = selectedRuleClip(), players = M.players(project);
+      const player = players.find(row => row.Id === clip?.playerId);
+      return player ? player.Characters : (players[0]?.Characters || []).filter(name =>
+        players.every(row => row.Characters.includes(name)));
+    };
     const context = () => {
-      const clip = getProject().clips.find(row => row.id === current?.clipId);
-      return {character: clip ? M.character(catalog, clip.characterId).name : '',
-        otherAction: getProject().clips.find(row => row.id !== clip?.id)?.name || ''};
+      const clip = selectedRuleClip();
+      return {character: clip && !clip.useCurrentCharacter
+        && R.read(clip.sourceAction, 'Character', null) !== '' ? M.character(catalog, clip.characterId).name : '',
+        otherAction: scopedClips(clip).find(row => row.id !== clip?.id)?.name || ''};
     };
     const locate = id => {
       for (const entry of current?.entries || []) {
@@ -31,9 +47,12 @@
     }
     function open(clipId = null, view = 'edit') {
       const project = getProject(), clip = project.clips.find(row => row.id === clipId);
+      const players = M.isMultiplayer(project) ? M.players(project) : [];
+      const queuePlayerId = [clip?.playerId, project.activePlayerId, players[0]?.Id]
+        .find(id => players.some(player => player.Id === id)) || '';
       current = {clipId: clip?.id || null, view: clip || view === 'queue' ? view : 'guide', category: '技能与角色',
-        guide: 'start', changed: false, error: '', entries: clip
-          ? R.draft(clip, M.priorityOf(clip), M.prioritiesOf(clip), actionNames()) : [], active: null};
+        guide: 'start', queuePlayerId, changed: false, error: '', entries: clip
+          ? R.draft(clip, M.priorityOf(clip), M.prioritiesOf(clip), actionNames(clip)) : [], active: null};
       current.active = current.entries[0]?.tree.id || null;
       paint();
       if (!dialog.open) dialog.showModal();
@@ -42,13 +61,14 @@
       `<label class="condition-param"><span>${label}</span><select ${attributes}>${choices.map(([key, text]) =>
         `<option value="${html(key)}" ${String(key) === String(value) ? 'selected' : ''}>${html(text)}</option>`).join('')}</select></label>`;
     function targetChoices(value, character = false, required = false) {
-      const choices = required ? [] : [['', character ? '动作所属角色' : '本动作']];
-      const list = character ? catalog.characters.map(row => [row.name, row.name])
+      const implicitCharacter = context().character ? '动作所属角色' : '省略角色（原生默认）';
+      const choices = required ? [] : [['', character ? implicitCharacter : '本动作']];
+      const list = character ? characterNames().map(name => [name, name])
         : [...new Set(actionNames())].map(name => [name, name]);
       choices.push(...list);
       const encoded = typeof value === 'number' ? `@index:${value}` : value;
       if (!choices.some(([key]) => key === encoded) && encoded !== undefined)
-        choices.push([encoded, typeof value === 'number' ? `序号 ${value}` : value || '请选择动作']);
+        choices.push([encoded, typeof value === 'number' ? `序号 ${value}` : value || (character ? '请选择角色' : '请选择动作')]);
       return {choices, value: encoded};
     }
     function fields(node) {
@@ -155,16 +175,31 @@
         const clip = project.clips.find(row => row.id === current.clipId);
         Object.assign(clip, R.patch(current.entries, actionNames(), project.scheduling === 'original'));
       }
+      if (M.isMultiplayer(project)) return M.playerStrategy(project, catalog, current.queuePlayerId);
       if (M.hasTeams(project)) {
         return {Actions: M.teamPreview(project, catalog, project.activeTeamId)};
       }
       return M.exportStrategy(project, catalog);
     }
     function paintQueue() {
+      const project = getProject(), multiplayer = M.isMultiplayer(project);
+      const players = multiplayer ? M.players(project) : [];
+      if (multiplayer && !players.some(player => player.Id === current.queuePlayerId))
+        current.queuePlayerId = players[0]?.Id || '';
+      const player = players.find(row => row.Id === current.queuePlayerId);
+      $('queuePlayerControl').hidden = !multiplayer;
+      $('queuePlayerControl').innerHTML = multiplayer ? `<label class="queue-player-control"><span>执行端</span>
+        <select id="queuePlayerSelect" aria-label="查看玩家优先级队列">${players.map(row =>
+          `<option value="${html(row.Id)}" ${row.Id === current.queuePlayerId ? 'selected' : ''}>${html(row.Id)}${row.IsHost ? ' · 房主' : ''}</option>`).join('')}</select></label>` : '';
+      $('queueHeading').textContent = multiplayer ? '本端检查顺序' : M.hasTeams(project) ? '本队检查顺序' : '全局检查顺序';
+      $('queueDescription').textContent = multiplayer
+        ? '仅展示所选玩家和各端通用动作，包含未应用的条件修改。本端从上到下选择第一个成立的条目，执行后回到队首；其他玩家独立检查。'
+        : '本队列按实际导出 JSON 展开，包含尚未应用的条件修改。运行时先按实际队伍过滤，再从上到下选择第一个成立的条目，执行后回到队首。';
+      $('ruleQueueView').setAttribute('aria-label', multiplayer ? '本端优先级队列' : '优先级队列');
       try {
-        const project = getProject(), strategy = previewStrategy();
+        const strategy = previewStrategy();
         const plan = M.hasTeams(project) ? M.activeTeam(project) : null;
-        const party = plan?.roster.map(id => M.character(catalog, id).name) || null;
+        const party = player?.Characters || plan?.roster.map(id => M.character(catalog, id).name) || null;
         const queue = R.expand(strategy, party);
         const labels = plan && M.teamActionLabels ? M.teamActionLabels(project, catalog, plan.id) : null;
         const labelOf = name => labels instanceof Map ? labels.get(name) || name : labels?.[name] || name;
@@ -191,10 +226,10 @@
               <p>${html(description(row.expression))}</p>
               <details><summary>原生表达式与指令</summary><code>${html(row.expression) || '(空条件，始终成立)'}</code>
                 <code>${html(row.command)}</code>${plan ? `<code>Name: ${html(row.name)}</code>` : ''}</details></div>
-            <span class="queue-owner">${html(row.character || '沿用当前角色')}<small>Index ${row.index} · 声明 ${row.declaration + 1}</small></span>
+            <span class="queue-owner">${html(row.character || (multiplayer ? '沿用本端当前角色' : '沿用当前角色'))}<small>Index ${row.index} · 声明 ${row.declaration + 1}</small></span>
           </li>`;
         }).join('') || '<li class="rule-note">尚无动作。</li>';
-        $('queueStats').textContent = `${plan ? `${plan.name} · ` : ''}${strategy.Actions.length} 个动作 → ${queue.length} 个排序条目`;
+        $('queueStats').textContent = `${player ? `${player.Id} · ` : plan ? `${plan.name} · ` : ''}${strategy.Actions.length} 个动作 → ${queue.length} 个排序条目`;
         const fixed = node => {
           if (node.type === 'bool') return node.value;
           if (node.type === 'number') return node.value > 0;
@@ -229,6 +264,13 @@
       }
     }
     function guideContent(section) {
+      if (section === 'multiplayer') return `<h3>各玩家独立执行的多人 JSON</h3>
+        <p>两人各 2 名角色；三人房主 2 名、其他各 1 名；四人各 1 名。同一角色可属于不同玩家，动作由 Player 区分，本端名单内不能重复。</p>
+        <h4>优先级与历史按本端计算</h4><p>本端只检查自己的动作和共用动作，沿用原有 Index、Name 与额外触发顺序。另一端同名、同序号的动作不会改变本端 count、since 或 last-exec；共用动作加入每端，仍需避免与本端动作无意复用历史。</p>
+        <h4>共用与本端当前角色</h4><p>Player 和 Character 都为空时，各端分别执行；Player 有值、Character 为空时，仅指定端使用当前角色执行。具名角色动作必须指定所属玩家。公共开场先于本端开场，具名角色开场放到对应玩家中。</p>
+        <h4>不能跨端读取技能或共享时钟</h4><p>就绪、冷却、队伍、前台和执行记录只查询本机。时间轴为编排参考，不会向另一端发送键鼠输入，也不代表跨端技能同步。</p>
+        <h4>人数格式与派发范围</h4><p>JSON 支持 2 至 4 人；当前网站协作派发仍仅支持 1 带 1，保存三、四人格式不等于可以派发对应人数任务。现有协作流程使用 learner、helper 玩家 ID，区分大小写。</p>
+        <h4>TXT 明确选择一端</h4><p>选择具体玩家后单独导出 TXT，并确认条件调度会丢失。多人文件不能整体变成把所有玩家串起来的顺序轴。</p>`;
       if (section === 'teams') return `<h3>一份 JSON 适配多支队伍</h3>
         <p>在队伍管理中为每支队伍选择完整四人阵容，分别编辑动作、条件与优先级。没有安排动作的成员也属于阵容。启用的队伍一起导出，切换当前队伍只改变编辑对象。</p>
         <h4>同角色，不同打法</h4><p>雷国与万达都可以包含班尼特和香菱，但站场角色、充能与动作依赖不同。关联面板按队伍展示同一角色的规则，不会自动同步或替换。雷神在雷国站场开大，在某些超绽队只放 E；这些差异需要分别配置。</p>
@@ -242,7 +284,7 @@
         <div class="function-reference">${R.functions.map(item => `<article><h4>${html(item.title)}</h4>
           <code>${html(item.signature)}</code><p>${html(item.detail)}</p><code class="reference-example">${html(item.example)}</code></article>`).join('')}</div>`;
       if (section === 'priority') return `<h3>优先级的完整顺序</h3>
-        <ol><li>先保留 Character 为空或存在于实际队伍中的动作。</li>
+        <ol><li>多人先绑定本机玩家并保留本端与共用动作，再保留 Character 为空或存在于本机角色中的动作；普通 JSON 按实际队伍过滤。</li>
           <li>每个动作展开成一个主触发和全部 MorePriorities 额外触发。</li>
           <li>主触发的优先级是 Index，额外触发使用自己的 Priority。数值越小越优先，支持负整数。</li>
           <li>同优先级使用稳定排序：先按 Actions 声明顺序；同动作先主触发，再按额外触发的声明顺序。</li>
@@ -280,6 +322,7 @@
           <tr><th>时间轴</th><td>命令顺序参考</td><td>条件模式为时长参考</td></tr></tbody></table>
         <h4>一个动作包含什么</h4><dl class="rule-field-reference">
           <div><dt>Name</dt><dd>动作名称，供日志和历史引用。</dd></div>
+          <div><dt>Player</dt><dd>多人文件中的执行玩家；留空且角色也为空时为各端通用。历史与优先级按本端计算。</dd></div>
           <div><dt>Character</dt><dd>执行前切到的角色；留空沿用当前角色，缺席角色的动作会过滤。</dd></div>
           <div><dt>Action</dt><dd>按先后执行的技能、普攻、等待、移动及键鼠命令。</dd></div>
           <div><dt>Index</dt><dd>主触发的优先级，也是按序号查询历史的标识。</dd></div>
@@ -290,11 +333,11 @@
           ${icon('arrow-right')}<span>执行第一个成立的动作</span>${icon('arrow-right')}<span>记录后重新选择</span></div>
         <p>例：治疗优先级 -10、战技优先级 10、普攻优先级 100。前台低血量且治疗 Q 就绪时选治疗；否则看战技；再否则看普攻。高优先级条件一直成立时，低优先级可能永远轮不到。</p>
         <h4>配置条件的三个问题</h4><ol><li>由谁执行？指定角色与“当前前台角色”并不是同一个概念。</li>
-          <li>何时允许？先拖就绪条件，再按需要叠加时间、次数或前置动作。</li><li>和其他动作谁先？查看全局队列，核对额外触发与同优先级顺序。</li></ol>`;
+          <li>何时允许？先拖就绪条件，再按需要叠加时间、次数或前置动作。</li><li>和其他动作谁先？查看队列；多人先选择执行端，再核对额外触发与同优先级顺序。</li></ol>`;
     }
     function paintGuide() {
       const tabs = [['start', '入门'], ['priority', '优先级'], ['functions', '函数'], ['examples', '示例'],
-        ['teams', '多队伍'], ['limits', '执行边界']];
+        ['multiplayer', '多人联机'], ['teams', '多队伍'], ['limits', '执行边界']];
       $('ruleGuideTabs').innerHTML = tabs.map(([key, label]) => `<button type="button" data-guide-section="${key}"
         class="${current.guide === key ? 'selected' : ''}" aria-pressed="${current.guide === key}">${label}</button>`).join('');
       $('ruleGuideContent').innerHTML = guideContent(current.guide);
@@ -305,7 +348,8 @@
       const priority = active?.dataset.rulePriority;
       const position = active?.selectionStart;
       const clip = getProject().clips.find(row => row.id === current.clipId);
-      $('rulesTitle').textContent = clip ? `${clip.useCurrentCharacter ? '当前前台角色' : M.character(catalog, clip.characterId).name} · ${clip.name || '未命名动作'}`
+      const playerLabel = M.isMultiplayer(getProject()) && clip ? `${clip.playerId || '各端通用'} · ` : '';
+      $('rulesTitle').textContent = clip ? `${playerLabel}${clip.useCurrentCharacter ? '当前前台角色' : M.character(catalog, clip.characterId).name} · ${clip.name || '未命名动作'}`
         : current.view === 'queue' ? 'JSON 优先级队列' : 'JSON 执行指南';
       for (const tab of dialog.querySelectorAll('[data-rules-view]')) {
         tab.classList.toggle('selected', tab.dataset.rulesView === current.view);
@@ -335,6 +379,8 @@
       const location = locate(groupId);
       if (location?.node.type !== 'group') return;
       const node = R.make(kind, context());
+      if (kind === 'in-party' && M.isMultiplayer(getProject()) && !context().character)
+        node.params.target = characterNames()[0] || '';
       location.node.children.splice(index === null ? location.node.children.length : index, 0, node);
       dirty(location.entry);
       current.active = node.type === 'group' ? node.id : groupId;
@@ -391,7 +437,12 @@
     });
     dialog.addEventListener('change', event => {
       const input = event.target;
-      if (input.dataset.rulePriority) {
+      if (input.id === 'queuePlayerSelect' && current) {
+        current.queuePlayerId = input.value;
+        paintQueue();
+        icons();
+        $('queuePlayerSelect').focus({preventScroll: true});
+      } else if (input.dataset.rulePriority) {
         const entry = current.entries.find(row => row.id === input.dataset.rulePriority);
         entry.priority = input.value === '' ? NaN : Number(input.value); current.changed = true; paint();
       } else if (input.dataset.ruleInput) {
