@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="editor.css?v=combat-multiplayer-20261022">
   <link rel="stylesheet" href="teams.css?v=combat-teams-20261018">
   <link rel="stylesheet" href="multiplayer.css?v=combat-multiplayer-20261022">
+  <link rel="stylesheet" href="tree-editor.css?v=combat-tree-preview-20261023">
   <script src="vendor/lucide.min.js" defer></script>
   <script src="vendor/jsep.iife.min.js" defer></script>
   <script src="catalog.js" defer></script>
@@ -23,7 +24,9 @@
   <script src="rule-editor.js?v=combat-multiplayer-20261022" defer></script>
   <script src="team-editor.js?v=combat-teams-20261018" defer></script>
   <script src="multiplayer-editor.js?v=combat-multiplayer-20261022" defer></script>
-  <script src="editor.js?v=combat-multiplayer-20261022" defer></script>
+  <script src="tree-model.js?v=combat-tree-preview-20261023" defer></script>
+  <script src="tree-editor.js?v=combat-tree-preview-20261023" defer></script>
+  <script src="editor.js?v=combat-tree-preview-20261023" defer></script>
 </head>
 <body>
   <header class="app-header">
@@ -110,6 +113,10 @@
           <output id="timeReadout" class="time-readout">00:00.0</output>
           <select id="playbackSpeed" aria-label="预览速度"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select>
           <span id="cycleReadout" class="cycle-readout">第 1 轮</span>
+        </div>
+        <div id="timelineViewControl" class="timeline-view-control" role="group" aria-label="编辑器视图">
+          <button id="classicView" type="button" data-timeline-view="classic" class="selected" aria-pressed="true" title="经典时间轴" aria-label="经典时间轴"><i data-lucide="layers-3"></i><span>经典</span></button>
+          <button id="treeView" type="button" data-timeline-view="tree" aria-pressed="false" title="树状时间轴预览" aria-label="树状时间轴预览"><i data-lucide="workflow"></i><span>树状新版</span></button>
         </div>
         <div id="mobileHistory" class="mobile-history"><div id="mobileUndoSlot"></div><div id="mobileRedoSlot"></div></div>
         <div class="loop-controls">

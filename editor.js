@@ -4,12 +4,14 @@
   const M = window.CombatTimeline;
   const Ops = window.CombatOperations;
   const catalog = window.CombatCatalog;
+  const Tree = window.CombatTreeModel.create(M, window.CombatConditions);
+  const treeEntry = new URLSearchParams(window.location.search).get('view') === 'tree';
   const $ = id => document.getElementById(id);
   const html = value => String(value ?? '').replace(/[&<>"']/g, char =>
     ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
   const icon = name => `<i data-lucide="${name}"></i>`;
   const time = value => M.seconds(value).toFixed(1);
-  let storageKey = 'betterbgi.combat-timeline.v1';
+  let storageKey = treeEntry ? 'betterbgi.combat-timeline.tree-preview.v1' : 'betterbgi.combat-timeline.v1';
   const palette = {雷: '#8972b2', 水: '#428cac', 火: '#c56b55', 风: '#499b87',
     草: '#829b43', 岩: '#b49438', 冰: '#62a5b3'};
   const state = {project: null, selected: null, selection: [], libraryFocus: '10000052', libraryAbility: 'skill',
@@ -17,7 +19,7 @@
     playheadMs: 0, cycle: 1, speed: 1, hasLooped: false, undo: [], redo: [], drag: null,
     draggingCharacter: null, quickAdd: null, toastTimer: null, lastFrame: null,
     roster: null, ownedOnly: false, roleSwitcher: null, nativeTrackChoices: {}, nativeExpandedGroups: [],
-    playerTrackOrder: {}};
+    playerTrackOrder: {}, view: treeEntry ? 'tree' : 'classic'};
   const mobileLayout = matchMedia('(max-width: 710px)');
   const mobileControls = [
     ['projectHeading', 'mobileProjectSlot'], ['strategyModeControl', 'mobileFormatSlot'], ['executionMode', 'mobileModeSlot'],
@@ -40,10 +42,10 @@
   }
 
   try {
-    const saved = localStorage.getItem(storageKey);
-    state.project = saved ? M.normalizeProject(JSON.parse(saved), catalog) : M.demoProject(catalog);
+    const saved = localStorage.getItem(storageKey) || (treeEntry ? localStorage.getItem('betterbgi.combat-timeline.v1') : null);
+    state.project = saved ? M.normalizeProject(JSON.parse(saved), catalog) : treeEntry ? Tree.demo(catalog) : M.demoProject(catalog);
   } catch {
-    state.project = M.demoProject(catalog);
+    state.project = treeEntry ? Tree.demo(catalog) : M.demoProject(catalog);
   }
   state.selected = state.project.clips[0]?.id || null;
   state.selection = state.selected ? [state.selected] : [];
@@ -53,6 +55,10 @@
     change, icons, toast, onSwitch: teamChanged, openQueue: () => ruleEditor.open(null, 'queue')});
   const multiplayerEditor = window.CombatMultiplayerEditor.create({model: M, catalog, getProject: () => state.project,
     change, icons, toast, onSwitch: multiplayerChanged, onExportText: showPlayerText});
+  const treeEditor = window.CombatTreeEditor.create({model: M, conditions: window.CombatConditions, treeModel: Tree,
+    catalog, getProject: () => state.project, getState: () => state, canvas: $('timelineCanvas'),
+    scroller: $('timelineScroller'), change, icons, toast, select: selectClip,
+    openRules: id => ruleEditor.open(id), selectedAbility, avatarHtml, skillImage});
 
   function icons() { window.lucide?.createIcons(); }
   function avatarHtml(character, className = '') {
@@ -110,7 +116,9 @@
     }
     return clip.abilityId === 'attack' ? {...skill, name: '普攻'} : skill;
   }
-  function labelWidth() { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--label-width')); }
+  function isTreeView() { return state.view === 'tree' && Tree.supported(state.project); }
+  function labelWidth() { return isTreeView() ? treeEditor.axisOffset()
+    : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--label-width')); }
   function trackHeight() { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--track-height')); }
   function clipHeight() { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--clip-height')); }
   function syncMobileLayout() {
@@ -156,16 +164,24 @@
     persist();
   }
 
-  function change(operation) {
+  function change(operation, {render = true} = {}) {
     const before = M.clone(state.project);
     try {
       operation();
       checkpoint(before);
-      paint();
+      if (render) paint();
+      else {
+        $('undo').disabled = !state.undo.length;
+        $('redo').disabled = !state.redo.length;
+        paintValidation();
+        paintInspector();
+      }
+      return true;
     } catch (error) {
       state.project = before;
       toast(error.message, true);
       paint();
+      return false;
     }
   }
 
@@ -522,7 +538,7 @@
     });
     const nextLink = new Map(links.map(link => [link.from.id, link]));
     const trackRows = nativeTrackRows();
-    const tracks = trackRows.map(({id, characterId, group, playerId, common: current, label, firstForPlayer}, index) => {
+    const tracks = isTreeView() ? '' : trackRows.map(({id, characterId, group, playerId, common: current, label, firstForPlayer}, index) => {
       const common = current || group && characterId === null;
       const character = common ? {name: label || group.name, color: '#7e8c9e'} : M.character(catalog, characterId);
       const role = common ? {role: 'flex', candidates: []}
@@ -663,7 +679,8 @@
     const loopTarget = !independent && rows.length && project.repeat && !returnEntry ? `<div class="loop-target"
       style="left:${labelWidth() + project.durationMs / 1000 * state.zoom}px;top:${connectionY - 17 + project.team.indexOf(rows[0].characterId) * rowHeight}px">
       ${icon('repeat-2')}<span>下一轮</span></div>` : '';
-    $('timelineCanvas').innerHTML = ruler + switchStrip + tracks + connections + loopTarget +
+    if (isTreeView()) treeEditor.paint();
+    else $('timelineCanvas').innerHTML = ruler + switchStrip + tracks + connections + loopTarget +
       (!project.team.length && !multiplayer ? `<div class="empty-timeline">${icon('users-round')}<span>尚未添加角色</span></div>` : '') +
       `<div class="loop-shade" style="left:${labelWidth() + project.durationMs / 1000 * state.zoom}px;right:0"></div>
       <div class="loop-end" style="left:${labelWidth() + project.durationMs / 1000 * state.zoom}px">
@@ -685,12 +702,7 @@
             <small>${conditional ? `P${M.priorityOf(clip)}` : `${time(clip.startMs)}s`}</small></span></button>`;
     }).join('');
     paintSelection();
-    $('validationStatus').innerHTML = errors.length ? `${icon('circle-alert')}<span>${errors.length} 项待调整</span>`
-      : issues.length ? `${icon('info')}<span>${issues.length} 项参考提示</span>`
-      : `${icon('circle-check')}<span>排轴检查通过</span>`;
-    $('validationStatus').classList.toggle('has-issues', errors.length > 0);
-    $('validationStatus').classList.toggle('has-warnings', !errors.length && issues.length > 0);
-    $('exportStrategy').disabled = errors.length > 0;
+    paintValidation(issues);
     $('executionMode').value = executionMode();
     $('previewStatus').textContent = M.isText(project) ? 'TXT · 命令顺序参考'
       : M.isProcess(project) ? 'JSON · 按步骤执行'
@@ -704,6 +716,16 @@
     $('loopDuration').disabled = multiplayer && !project.activePlayerId;
     $('repeatToggle').disabled = multiplayer && !project.activePlayerId;
     paintPlayhead();
+  }
+
+  function paintValidation(issues = M.validate(state.project, catalog)) {
+    const errors = issues.filter(issue => issue.severity !== 'warning');
+    $('validationStatus').innerHTML = errors.length ? `${icon('circle-alert')}<span>${errors.length} 项待调整</span>`
+      : issues.length ? `${icon('info')}<span>${issues.length} 项参考提示</span>`
+      : `${icon('circle-check')}<span>排轴检查通过</span>`;
+    $('validationStatus').classList.toggle('has-issues', errors.length > 0);
+    $('validationStatus').classList.toggle('has-warnings', !errors.length && issues.length > 0);
+    $('exportStrategy').disabled = errors.length > 0;
   }
 
   function paintSelection() {
@@ -882,6 +904,15 @@
     const format = M.isText(state.project) ? 'txt' : 'json';
     const multiplayer = M.isMultiplayer(state.project);
     document.body.classList.toggle('multiplayer-project', multiplayer);
+    document.body.classList.toggle('tree-preview', isTreeView());
+    for (const button of $('timelineViewControl').querySelectorAll('[data-timeline-view]')) {
+      const selected = button.dataset.timelineView === (isTreeView() ? 'tree' : 'classic');
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-pressed', String(selected));
+      button.disabled = button.dataset.timelineView === 'tree' && !Tree.supported(state.project);
+      button.title = button.dataset.timelineView === 'tree'
+        ? Tree.supported(state.project) ? '树状时间轴预览' : '树状视图用于 JSON 条件与优先级模式' : '经典时间轴';
+    }
     for (const button of $('strategyModeControl').querySelectorAll('[data-strategy-format]')) {
       const selected = button.dataset.strategyFormat === format;
       button.classList.toggle('selected', selected);
@@ -1472,6 +1503,7 @@
   }
 
   function beginPointer(event) {
+    if (isTreeView() && event.target.closest('.tree-controls')) return;
     if (event.button !== 0 || event.target.closest('.track-label')) return;
     const resize = event.target.closest('[data-resize]');
     const loopResize = event.target.closest('[data-loop-resize]');
@@ -1714,6 +1746,7 @@
     state.nativeTrackChoices = {};
     state.nativeExpandedGroups = [];
     state.playerTrackOrder = {};
+    treeEditor.reset();
     change(() => {
       state.project = project;
       setSelection(project.clips[0] ? [project.clips[0].id] : []);
@@ -2107,6 +2140,23 @@
   });
 
   $('projectName').addEventListener('change', event => change(() => { state.project.name = event.target.value.trim() || '未命名战斗流程'; }));
+  function setView(view) {
+    if (!['classic', 'tree'].includes(view)) return false;
+    if (view === 'tree' && !Tree.supported(state.project)) {
+      toast('树状视图用于 JSON 条件与优先级模式', true);
+      return false;
+    }
+    if (state.drag) cancelPointer();
+    pause(); closeRoleSwitcher(); closeQuickAdd();
+    state.view = view;
+    treeEditor.reset();
+    paint();
+    return true;
+  }
+  $('timelineViewControl').addEventListener('click', event => {
+    const button = event.target.closest('[data-timeline-view]');
+    if (button) setView(button.dataset.timelineView);
+  });
   $('undo').addEventListener('click', undo);
   $('redo').addEventListener('click', redo);
   $('snapToggle').addEventListener('click', () => {
@@ -2371,10 +2421,11 @@
     state.nativeTrackChoices = {};
     state.nativeExpandedGroups = [];
     state.playerTrackOrder = {};
+    treeEditor.reset();
     paint(); persist();
   }
   window.combatEditor = {apiVersion: 1, state, model: M, catalog, paint, loadObject, addCharacter, updateClip,
-    selectClip, exportObject, exportArtifact, notify: toast, setDraftKey,
+    selectClip, exportObject, exportArtifact, notify: toast, setDraftKey, setView,
     getProject() { M.syncTeams(state.project); return M.clone(state.project); },
     setOwnedOnly(value) { state.ownedOnly = Boolean(value); paint(); },
     setRoster(record, ownedOnly = true) {

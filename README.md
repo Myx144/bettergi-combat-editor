@@ -4,6 +4,16 @@
 
 将角色拖入时间轴，再编排技能、普攻、等待、移动、冲刺及键鼠动作。TXT 与 JSON 分别编辑和导出；支持多人联机 JSON、多队伍合并 JSON、共享角色关系、角色兼容分支、跨角色插入、框选整体吸附、撤销重做和工程保存。桌面与移动端共用同一套编辑逻辑。
 
+## 树状新版预览
+
+`preview/tree-timeline` 分支提供 `0.6.0-preview.1`。稳定版仍为 `0.5.0`，原程序和工程可继续使用。预览版成品名为 `BetterGI-Combat-Editor-Tree-0.6.0-preview.1-win-x64.exe`，使用独立草稿目录，可以与稳定版并存。
+
+预览版将 JSON 条件分支放入主时间轴：上面的分支先检查，条件通过后执行右边的动作；“全部满足 / 任一满足”可以展开，条件素材可以直接拖入分组。上下拖动分支或使用箭头调整检查顺序，左右拖动片段调整参考排轴。为同一动作添加另一种触发方式时，仍共用该动作的执行记录。
+
+工具栏可随时切回经典时间轴。浏览器打开 `tree.html` 进入新版，`index.html` 默认进入经典版。TXT、JSON 步骤与计划模式保留经典时间轴；切换视图不会转换策略格式或修改工程。多人策略先选择玩家，再编辑本端和各端通用分支。
+
+兼容处理、原生优先级和草稿隔离说明见 [树状时间轴预览](docs/tree-timeline-preview.md)。
+
 ## 直接运行
 
 Windows 成品无需安装 Node.js、Python 或 BetterGI。
@@ -65,6 +75,8 @@ npm run dist:win
 ```
 
 输出位于 `release/`。初版未进行代码签名。
+
+预览分支的桌面窗口和解压后启动程序名为 `BetterGI Combat Editor Tree Preview`。构建时可用 `npm run dist:win -- --config.directories.output=release/0.6.0-preview.1` 将预览产物放入独立目录。
 
 ## 时间与执行
 

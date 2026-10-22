@@ -6,7 +6,7 @@ const path = require('node:path');
 const {execFileSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const files = ['editor.js', 'model.js', 'operations.js', 'strategy-formats.js', 'conditions.js', 'rule-editor.js',
-  'teams.js', 'team-editor.js', 'multiplayer.js', 'multiplayer-editor.js', 'roles.js', 'catalog.js', 'cast-timings.js',
+  'teams.js', 'team-editor.js', 'multiplayer.js', 'multiplayer-editor.js', 'tree-model.js', 'tree-editor.js', 'roles.js', 'catalog.js', 'cast-timings.js',
   'electron/main.cjs', 'electron/preload.cjs', 'tools/build-catalog.cjs'];
 for (const file of files) execFileSync(process.execPath, ['--check', path.join(root, file)], {stdio: 'pipe'});
 const page = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -16,7 +16,7 @@ for (const match of page.matchAll(/(?:src|href)="([^"]+)"/g)) {
   assert.ok(fs.existsSync(path.join(root, asset)), `Missing asset: ${asset}`);
 }
 for (const file of ['index.html', 'editor.js', 'model.js', 'operations.js', 'strategy-formats.js', 'conditions.js',
-  'rule-editor.js', 'teams.js', 'team-editor.js', 'multiplayer.js', 'multiplayer-editor.js', 'roles.js']) {
+  'rule-editor.js', 'teams.js', 'team-editor.js', 'multiplayer.js', 'multiplayer-editor.js', 'tree-model.js', 'tree-editor.js', 'roles.js']) {
   const text = fs.readFileSync(path.join(root, file), 'utf8');
   assert.ok(!/\/web\/api|X-Combat-CSRF|websiteToolbar|combatApplyDialog|bgi_combat_read/.test(text),
     `Website integration leaked into ${file}`);

@@ -4,9 +4,11 @@ const {app, BrowserWindow, Menu, dialog, session} = require('electron');
 const path = require('node:path');
 const {pathToFileURL} = require('node:url');
 
-app.setName('BetterGI Combat Editor');
+const preview = app.getVersion().includes('-preview');
+app.setName(preview ? 'BetterGI Combat Editor Tree Preview' : 'BetterGI Combat Editor');
 const profile = process.argv.find(value => value.startsWith('--user-data-dir='));
 if (profile) app.setPath('userData', path.resolve(profile.slice('--user-data-dir='.length)));
+else if (preview) app.setPath('userData', path.join(app.getPath('appData'), 'BetterGI Combat Editor Tree Preview'));
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -21,7 +23,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
-    app.setAppUserModelId('io.github.myx144.bettergi-combat-editor');
+    app.setAppUserModelId('io.github.myx144.bettergi-combat-editor' + (preview ? '.preview' : ''));
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     session.defaultSession.setPermissionCheckHandler(() => false);
     session.defaultSession.webRequest.onBeforeRequest({urls: ['http://*/*', 'https://*/*']}, (details, callback) => {
@@ -41,21 +43,21 @@ if (!app.requestSingleInstanceLock()) {
 
     window = new BrowserWindow({
       width: 1440, height: 900, minWidth: 760, minHeight: 500,
-      title: 'BetterGI Combat Editor', backgroundColor: '#f2f4f7', show: false,
+      title: 'BetterGI Combat Editor' + (preview ? ' Tree Preview' : ''), backgroundColor: '#f2f4f7', show: false,
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
         contextIsolation: true, nodeIntegration: false, sandbox: true
       }
     });
     const entry = path.resolve(__dirname, '..', 'index.html');
-    const entryUrl = pathToFileURL(entry).href;
+    const entryUrl = pathToFileURL(entry).href + (preview ? '?view=tree' : '');
     window.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
     window.webContents.on('will-navigate', (event, destination) => {
       if (destination.split('#')[0] !== entryUrl) event.preventDefault();
     });
     window.once('ready-to-show', () => window.show());
     window.on('closed', () => { window = null; });
-    window.loadFile(entry);
+    window.loadFile(entry, preview ? {query: {view: 'tree'}} : {});
 
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       {label: '文件', submenu: [
@@ -66,6 +68,8 @@ if (!app.requestSingleInstanceLock()) {
         {type: 'separator'}, {role: 'quit', label: '退出'}
       ]},
       {label: '视图', submenu: [
+        {label: '经典时间轴', click: () => command('classicView')},
+        {label: '树状时间轴预览', click: () => command('treeView')},
         {label: '显示整轮', accelerator: 'CmdOrCtrl+0', click: () => command('fitView')},
         {label: '角色库', click: () => command('libraryToggle')},
         {label: '片段属性', click: () => command('inspectorToggle')},

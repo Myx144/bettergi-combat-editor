@@ -1,6 +1,6 @@
 {
   "name": "bettergi-combat-editor",
-  "version": "0.5.0",
+  "version": "0.6.0-preview.1",
   "description": "A visual timeline and conditional strategy editor for BetterGI TXT and JSON combat scripts.",
   "author": "Myx144",
   "license": "MIT",
@@ -25,8 +25,8 @@
     "electron-builder": "26.15.3"
   },
   "build": {
-    "appId": "io.github.myx144.bettergi-combat-editor",
-    "productName": "BetterGI Combat Editor",
+    "appId": "io.github.myx144.bettergi-combat-editor.preview",
+    "productName": "BetterGI Combat Editor Tree Preview",
     "asar": true,
     "electronDist": "node_modules/electron/dist",
     "directories": {
@@ -34,6 +34,7 @@
     },
     "files": [
       "index.html",
+      "tree.html",
       "editor.css",
       "editor.js",
       "model.js",
@@ -48,6 +49,9 @@
       "multiplayer.js",
       "multiplayer-editor.js",
       "multiplayer.css",
+      "tree-model.js",
+      "tree-editor.js",
+      "tree-editor.css",
       "catalog.js",
       "cast-timings.js",
       "vendor/**",
@@ -59,7 +63,7 @@
     "win": {
       "target": ["portable", "zip"],
       "signAndEditExecutable": false,
-      "artifactName": "BetterGI-Combat-Editor-${version}-win-${arch}.${ext}"
+      "artifactName": "BetterGI-Combat-Editor-Tree-${version}-win-${arch}.${ext}"
     },
     "portable": {
       "requestExecutionLevel": "user"
