@@ -6,7 +6,7 @@
 
 ## 树状新版预览
 
-`preview/tree-timeline` 分支提供 `0.6.0-preview.1`。稳定版仍为 `0.5.0`，原程序和工程可继续使用。预览版成品名为 `BetterGI-Combat-Editor-Tree-0.6.0-preview.1-win-x64.exe`，使用独立草稿目录，可以与稳定版并存。
+`preview/tree-timeline` 分支提供 `0.6.0-preview.2`。稳定版仍为 `0.5.0`，原程序和工程可继续使用。预览版成品名为 `BetterGI-Combat-Editor-Tree-0.6.0-preview.2-win-x64.exe`，使用独立草稿目录，可以与稳定版并存。
 
 预览版将 JSON 条件分支放入主时间轴：上面的分支先检查，条件通过后执行右边的动作；“全部满足 / 任一满足”可以展开，条件素材可以直接拖入分组。上下拖动分支或使用箭头调整检查顺序，左右拖动片段调整参考排轴。为同一动作添加另一种触发方式时，仍共用该动作的执行记录。
 
@@ -76,7 +76,7 @@ npm run dist:win
 
 输出位于 `release/`。初版未进行代码签名。
 
-预览分支的桌面窗口和解压后启动程序名为 `BetterGI Combat Editor Tree Preview`。构建时可用 `npm run dist:win -- --config.directories.output=release/0.6.0-preview.1` 将预览产物放入独立目录。
+预览分支的桌面窗口和解压后启动程序名为 `BetterGI Combat Editor Tree Preview`。构建时可用 `npm run dist:win -- --config.directories.output=release/0.6.0-preview.2` 将预览产物放入独立目录。
 
 ## 时间与执行
 
