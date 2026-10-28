@@ -1,6 +1,6 @@
 {
   "name": "bettergi-combat-editor",
-  "version": "0.6.0-preview.2",
+  "version": "0.6.0-preview.3",
   "description": "A visual timeline and conditional strategy editor for BetterGI TXT and JSON combat scripts.",
   "author": "Myx144",
   "license": "GPL-3.0-only",
