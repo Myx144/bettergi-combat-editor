@@ -115,7 +115,7 @@ TXT 默认只导出命令顺序和显式等待，不将参考轴的空白或估�
 
 ## 资料与许可
 
-原创编辑器代码使用 MIT License。角色资料、图标库及桌面运行时各自保留原许可，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+原创编辑器代码与桌面壳使用 GPL-3.0-only。完整条款见 [LICENSE](LICENSE)；角色资料、图标库及桌面运行时各自保留原许可，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 角色资料固定来源版本记录于 `data/catalog-source.json`，通过以下命令重新生成：
 

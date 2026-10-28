@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-The MIT license at the repository root covers the original editor and desktop wrapper. It does not relicense third-party materials.
+The GPL-3.0-only license at the repository root covers the original editor and desktop wrapper. It does not relicense third-party materials.
 
 ## genshin-db
 
@@ -19,7 +19,7 @@ The MIT license at the repository root covers the original editor and desktop wr
 
 ## External game images
 
-Character and talent images are referenced by public URLs at `https://enka.network/ui/`. The image files are not bundled in the repository or desktop release. Game artwork, names and trademarks retain their respective owners' rights, including HoYoverse / miHoYo. This project's MIT license grants no rights to that artwork. Images are optional; offline editing uses text fallbacks.
+Character and talent images are referenced by public URLs at `https://enka.network/ui/`. The image files are not bundled in the repository or desktop release. Game artwork, names and trademarks retain their respective owners' rights, including HoYoverse / miHoYo. This project's GPL-3.0-only license grants no rights to that artwork. Images are optional; offline editing uses text fallbacks.
 
 ## jsep
 
