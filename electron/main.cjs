@@ -75,7 +75,7 @@ if (!app.requestSingleInstanceLock()) {
         {label: '关于 BetterGI Combat Editor', click: () => dialog.showMessageBox(window, {
           type: 'info', title: 'BetterGI Combat Editor',
           message: 'BetterGI Combat Editor ' + app.getVersion(),
-          detail: '可视化战斗流程与时间轴编辑器\nCopyright (c) 2026 Myx144 and contributors\nMIT License',
+          detail: '可视化战斗流程与时间轴编辑器\nCopyright (c) 2026 Myx144 and contributors\nGPL-3.0-only（完整条款见随应用发布的 LICENSE）',
           buttons: ['确定']
         })}
       ]}

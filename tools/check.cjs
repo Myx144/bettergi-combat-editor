@@ -5,6 +5,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {execFileSync} = require('node:child_process');
 const root = path.resolve(__dirname, '..');
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+assert.equal(packageJson.license, 'GPL-3.0-only');
+assert.match(fs.readFileSync(path.join(root, 'LICENSE'), 'utf8'), /^\s*GNU GENERAL PUBLIC LICENSE\s+Version 3/m);
+assert.match(fs.readFileSync(path.join(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'), /GPL-3\.0-only/);
 const files = ['editor.js', 'model.js', 'operations.js', 'strategy-formats.js', 'conditions.js', 'rule-editor.js',
   'teams.js', 'team-editor.js', 'multiplayer.js', 'multiplayer-editor.js', 'roles.js', 'catalog.js', 'cast-timings.js',
   'electron/main.cjs', 'electron/preload.cjs', 'tools/build-catalog.cjs'];

@@ -3,7 +3,7 @@
   "version": "0.5.0",
   "description": "A visual timeline and conditional strategy editor for BetterGI TXT and JSON combat scripts.",
   "author": "Myx144",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "main": "electron/main.cjs",
   "repository": {
     "type": "git",
